@@ -1,5 +1,6 @@
 import type { AppLogoVariant } from "@openbot/brand";
 import type { AgentModelId, AgentProviderId, AppSetupState, DesktopPlatform } from "@openbot/contracts/ipc";
+import { isSelfHostRemovedProvider } from "@openbot/contracts/self-host-providers";
 import { Button, ErrorReference } from "@openbot/ui";
 import { useText } from "@openbot/ui/text";
 import { createEffect, createSignal, createStore, createUniqueId, For, Match, Show, Switch, untrack } from "solid-js";
@@ -128,7 +129,8 @@ export function FirstRunFlow(props: FirstRunFlowProps) {
       return free?.state === "not-installed" && free.runtimeStatus?.phase === "not-downloaded";
     },
     (missing) => {
-      if (!missing || freeDownloadRequested) return;
+      // Self-hosted fork: no download for a removed provider.
+      if (!missing || freeDownloadRequested || isSelfHostRemovedProvider(FREE_PROVIDER)) return;
       freeDownloadRequested = true;
       untrack(() => void Promise.resolve(props.onDownloadProvider?.(FREE_PROVIDER)).catch(() => undefined));
     },
@@ -445,7 +447,8 @@ export function FirstRunFlow(props: FirstRunFlowProps) {
                   </p>
                 )}
               </Show>
-              <Show when={state.step === "plan"}>
+              {/* Self-hosted fork: no free models when their provider is removed. */}
+              <Show when={state.step === "plan" && !isSelfHostRemovedProvider(FREE_PROVIDER)}>
                 <Button type="button" variant="ghost" disabled={busy()} onClick={startFree}>
                   {t("onboarding.choice.startFreeInstead")}
                 </Button>

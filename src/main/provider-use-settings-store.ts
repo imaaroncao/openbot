@@ -1,4 +1,5 @@
 import { AGENT_PROVIDERS, type AgentProviderId } from "@openbot/contracts/agent-providers";
+import { isSelfHostRemovedProvider, SELF_HOST_REMOVED_PROVIDERS } from "@openbot/contracts/self-host-providers";
 import { sourceText } from "@openbot/i18n/source";
 import { Effect, Result, Schema, Semaphore } from "effect";
 import { isMissingFileError } from "../backend/file-errors";
@@ -39,7 +40,8 @@ export class ProviderUseSettingsStore {
   }).bind(this);
 
   off(): readonly AgentProviderId[] {
-    return [...this.#off];
+    // Self-hosted fork: a removed provider is always off.
+    return [...new Set([...this.#off, ...SELF_HOST_REMOVED_PROVIDERS])];
   }
 
   readonly set = Effect.fn("ProviderUseSettings.set")(function* (
@@ -49,6 +51,9 @@ export class ProviderUseSettingsStore {
   ) {
     return yield* this.#writes.withPermit(
       Effect.gen({ self: this }, function* () {
+        // Self-hosted fork: a removed provider cannot be turned on.
+        if (on && isSelfHostRemovedProvider(provider))
+          return yield* new PreferenceFileFailure({ cause: new Error(`${provider} is removed in this build.`) });
         if (this.#readOnly)
           return yield* new PreferenceFileFailure({
             cause: new Error(sourceText("error.provider.useSettingsReadOnly")),

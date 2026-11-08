@@ -7,6 +7,7 @@ import {
   type ProviderApiKeyStatus,
   type ProviderRuntimeStatus,
 } from "@openbot/contracts/ipc";
+import { isSelfHostRemovedProvider } from "@openbot/contracts/self-host-providers";
 import type { ProviderPickerOption } from "@openbot/ui/components/ProviderPicker";
 import { providerDiagnosticsText } from "@openbot/ui/features/provider-diagnostics/provider-diagnostics";
 import { createMemo } from "solid-js";
@@ -55,6 +56,7 @@ export function createSettingsGeneralStore(props: GeneralStoreProps) {
     AGENT_PROVIDERS.filter(
       (provider) =>
         provider !== "acp" &&
+        !isSelfHostRemovedProvider(provider) && // Self-hosted fork
         (!props.providerHostName ||
           !isLocalOnlyProvider(provider) ||
           props.agentStatus?.providers?.some((candidate) => candidate.id === provider) === true),

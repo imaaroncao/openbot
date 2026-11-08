@@ -38,6 +38,7 @@ import {
   type SignInRelayStatus,
 } from "@openbot/contracts/ipc";
 import { isOneOf } from "@openbot/contracts/runtime-values";
+import { isSelfHostRemovedProvider } from "@openbot/contracts/self-host-providers";
 import { TEAM_API_ROUTES } from "@openbot/contracts/team-api-routes";
 import { ACP_REGISTRY_CAPABILITY, ACP_REGISTRY_ROUTES } from "@openbot/contracts/team-protocol/acp-registry-v1";
 import { CUSTOM_AGENTS_CAPABILITY } from "@openbot/contracts/team-protocol/custom-agents-v1";
@@ -235,6 +236,7 @@ export function providerRows(
   return AGENT_PROVIDERS.filter(
     (provider) =>
       provider !== "acp" &&
+      !isSelfHostRemovedProvider(provider) && // Self-hosted fork
       (!isLocalOnlyProvider(provider) || status?.providers?.some((candidate) => candidate.id === provider) === true),
   )
     .sort((left, right) => agentProviderDescriptor(left).pickerOrder - agentProviderDescriptor(right).pickerOrder)

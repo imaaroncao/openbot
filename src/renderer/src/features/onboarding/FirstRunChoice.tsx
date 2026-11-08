@@ -1,10 +1,12 @@
 import { ProviderLogo, type ProviderLogoVariant } from "@openbot/brand";
+import { isSelfHostRemovedProvider } from "@openbot/contracts/self-host-providers";
 import { Button, ChevronRight, Spinner } from "@openbot/ui";
 import { AgentAvatar } from "@openbot/ui/features/agents/AgentAvatar";
 import { useText } from "@openbot/ui/text";
 import { createUniqueId, For, Show } from "solid-js";
 import { AnalyticsConsentRow, ConsentNotice } from "./AnalyticsConsent";
 import type { OnboardingAvatarVariant } from "./onboarding-avatars";
+import { FREE_PROVIDER } from "./onboarding-provider-rows";
 
 export interface FirstRunChoiceProps {
   /** The agents over the title. The splash shows the same ones. */
@@ -60,28 +62,31 @@ export function FirstRunChoice(props: FirstRunChoiceProps) {
       </h1>
       <p class="onboarding-description">{t("onboarding.choice.description")}</p>
       <div class="first-run-choice-rows">
-        {/* The name is the title alone; the detail line describes the answer. */}
-        <Button
-          type="button"
-          variant="ghost"
-          class="first-run-choice-row"
-          disabled={props.disabled || props.loading}
-          aria-busy={props.loading ? "true" : undefined}
-          aria-label={t("onboarding.choice.startFree")}
-          aria-describedby={freeDescribedBy()}
-          onClick={() => props.onStartFree()}
-        >
-          <span class="first-run-choice-row-text">
-            <strong>{t("onboarding.choice.startFree")}</strong>
-            <span id={freeDetailId}>{t("onboarding.choice.freeDetail")}</span>
-          </span>
-          <Show
-            when={props.loading}
-            fallback={<ChevronRight class="first-run-choice-row-chevron" aria-hidden="true" />}
+        {/* Self-hosted fork: no free-models row when its provider is removed. */}
+        <Show when={!isSelfHostRemovedProvider(FREE_PROVIDER)}>
+          {/* The name is the title alone; the detail line describes the answer. */}
+          <Button
+            type="button"
+            variant="ghost"
+            class="first-run-choice-row"
+            disabled={props.disabled || props.loading}
+            aria-busy={props.loading ? "true" : undefined}
+            aria-label={t("onboarding.choice.startFree")}
+            aria-describedby={freeDescribedBy()}
+            onClick={() => props.onStartFree()}
           >
-            <Spinner size="sm" label={t("onboarding.opening")} />
-          </Show>
-        </Button>
+            <span class="first-run-choice-row-text">
+              <strong>{t("onboarding.choice.startFree")}</strong>
+              <span id={freeDetailId}>{t("onboarding.choice.freeDetail")}</span>
+            </span>
+            <Show
+              when={props.loading}
+              fallback={<ChevronRight class="first-run-choice-row-chevron" aria-hidden="true" />}
+            >
+              <Spinner size="sm" label={t("onboarding.opening")} />
+            </Show>
+          </Button>
+        </Show>
         <Button
           type="button"
           variant="ghost"

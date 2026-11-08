@@ -1,4 +1,5 @@
 import type { AgentProviderId } from "@openbot/contracts/ipc";
+import { isSelfHostRemovedProvider } from "@openbot/contracts/self-host-providers";
 import type { ProviderPickerOption } from "@openbot/ui/components/ProviderPicker";
 
 /**
@@ -56,10 +57,12 @@ function popularFirst(options: readonly ProviderPickerOption[]): ProviderPickerO
  * "More providers". The user chose to connect a plan, and can still find it there.
  */
 export function onboardingProviderRows(
-  options: readonly ProviderPickerOption[],
+  allOptions: readonly ProviderPickerOption[],
   kept: readonly AgentProviderId[] = [],
   includeFree = true,
 ): OnboardingProviderRows {
+  // Self-hosted fork: removed providers are not offered.
+  const options = allOptions.filter((option) => !isSelfHostRemovedProvider(option.id));
   const plans = options.filter((option) => option.id !== FREE_PROVIDER);
   const connected = popularFirst(plans.filter((option) => option.state === "available"));
   const notReady = popularFirst(plans.filter((option) => userHasProvider(option) && option.state !== "available"));
