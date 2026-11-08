@@ -349,6 +349,7 @@ import {
   type SecretStorage,
   type SecretStorageCipher,
 } from "./secret-storage-cipher";
+import { registerMacBridgeDriver } from "./self-host/mac-bridge";
 import { SERVER_AUDIT_FILE, ServerAuditStore, serverAuditNames } from "./server-audit-store";
 import { AGENT_PROCESS_VARIABLE, agentProcessEnvironment, ServerMemory } from "./server-memory";
 import { ServerMode, type ServerModeEnvironment } from "./server-mode";
@@ -1823,6 +1824,8 @@ export async function createApplicationServices({
   // After the provider runtimes, which hold the `cua-driver mcp` children that talk to this
   // daemon: stopping it first would leave them reading a socket nothing answers.
   teardown.push(TEARDOWN_ORDER.cuaDriver, "the Computer Use driver", () => runCauseEffect(cuaDriver.stop()));
+  // Self-hosted fork: the Mac bridge (src/main/self-host/mac-bridge.ts) serves this daemon to the VPS.
+  registerMacBridgeDriver(() => cuaDriver.mcpServerConfig());
   /*
    * The rim OpenBot draws over the window an agent works in.
    *

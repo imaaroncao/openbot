@@ -67,6 +67,7 @@ import { createQuitShortcut, isQuitGuarded, type QuitShortcut } from "./quit-sho
 import type { RemoteServerManager } from "./remote-server-manager";
 import type { RemoteWorkflowError } from "./remote-service-effects";
 import { sendToRenderer } from "./renderer-ipc";
+import { macBridgeConfigured, macBridgeRunning, setMacBridge } from "./self-host/mac-bridge";
 import { openSelfHostServerWindow } from "./self-host/server-settings-window";
 import { isTrustedRendererUrl } from "./trusted-renderer";
 import type { UpdateService } from "./update-service";
@@ -1109,6 +1110,14 @@ export function configureApplicationMenu(
             // Self-hosted fork: the account service and Signal of this build.
             label: "自托管服务器…",
             click: () => openSelfHostServerWindow(getMainWindow()),
+          },
+          {
+            // Self-hosted fork: agents on the VPS may use this Mac only while this is checked.
+            label: "允许 VPS 上的 agent 操作这台 Mac",
+            type: "checkbox",
+            checked: macBridgeRunning(),
+            enabled: macBridgeConfigured(),
+            click: (item) => setMacBridge(item.checked),
           },
           { type: "separator" },
           { role: "hide" },

@@ -153,6 +153,27 @@ selfhost/scripts/create-github-app.sh "OpenBot 你的名字"
 | Gmail / Google Drive | 不在内置列表。Google 官方 MCP（`gmailmcp.googleapis.com`、`drivemcp.googleapis.com`，预览版）需要你在 Google Cloud 建自己的 OAuth 客户端；或者用 Composio（第三方中转） |
 | Slack / Discord / Telegram | 需要官方机器人，自托管版不可用 |
 
+### 可选：Mac 桥接（VPS 上的 agent 操作你的 Mac，仅在需要时开启）
+
+OpenBot 的 agent 只能操作它所在服务器的电脑。Mac 桥接让 VPS 上的 agent 通过 MCP 工具使用这台 Mac 上 OpenBot 的 Computer Use 驱动（截图、点击、输入、操作 App），用的是你已经给 OpenBot 的屏幕权限，驱动的遥测关闭。
+
+```
+VPS agent → 172.31.250.1:2222（VPS 内网地址，防火墙只放行主机容器）
+  → SSH 隧道（由 Mac 上的 OpenBot 连到 VPS 的受限用户 macbridge，只能开这一个端口）
+  → Mac 上 127.0.0.1:47777（OpenBot 主进程，需要令牌）→ cua-driver mcp（OpenBot 自己的驱动）
+```
+
+1. 一次性设置（密钥、令牌、VPS 用户和防火墙规则、agent 工具）：
+
+   ```sh
+   selfhost/mac-bridge/mac-bridge.sh setup root@你的VPS
+   ```
+
+2. 在 OpenBot 里切到 VPS 服务器 → 应用市场 → **Add custom**：名称 `我的 Mac`，Transport 选命令（stdio），Command to launch 填 `/data/mac-bridge/connect.sh`，不需要参数。这个服务器上的 agent 都能用它。
+3. 开关：Mac 上 OpenBot 菜单 → **允许 VPS 上的 agent 操作这台 Mac**（打勾即开启，会弹通知）。每次启动 OpenBot 都是关闭的，退出 OpenBot 也会关闭。关闭时 Mac 和 VPS 上都没有监听，agent 调用工具只会得到"Mac 桥接已关闭"。开启期间 Mac 需要开机、不睡眠。
+
+**安全**：开启期间，这台 VPS 上的 agent 能做你在屏幕上能做的任何事；它浏览网页时可能被恶意内容诱导（提示注入）。只在需要时开启，用完关闭。
+
 ---
 
 ## 2. 桌面端 DMG
