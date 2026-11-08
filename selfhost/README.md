@@ -169,6 +169,7 @@ selfhost/scripts/sync-upstream.sh --tag   # 或者只合并最新的正式版本
 | `src/main/provider-runtime-releases.ts` | provider 版本黑名单改从你的 fork 读取 |
 | `src/renderer/src/analytics.ts`、`error-reports.ts` | 关闭界面分析/错误上报 |
 | `packages/telemetry/src/self-host.ts`（新增）、`transport.ts` | 总开关 `vendorTelemetryEnabled = false`；上报通道变成空操作 |
+| `packages/contracts/src/self-host-providers.ts`（新增）+ 5 处一行改动 | 移除 OpenCode：始终关闭、不下载不更新、新手引导/设置/手机端都不显示（要移除别的 provider，把 ID 加进这个列表） |
 | `apps/mobile/src/self-host/*`（新增） | 手机端服务器配置、登录页服务器入口、网络拦截 |
 | `apps/mobile/src/app/_layout.tsx` 第一行 | 最先加载网络拦截 |
 | `apps/mobile/src/features/auth/api/mobile-auth.ts` | 邮箱登录用你的服务器 |

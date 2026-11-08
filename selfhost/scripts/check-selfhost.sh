@@ -36,6 +36,11 @@ hook apps/mobile/app.config.js 'applySelfHost(' "mobile bundle IDs / no OTA"
 hook apps/mobile/src/features/push-notifications/push-notifications-native.ios.ts 'EXPO_PUBLIC_OPENBOT_APP_GROUP' "mobile App Group (push)"
 hook apps/mobile/src/features/share/model/share-extension.ts 'EXPO_PUBLIC_OPENBOT_APP_GROUP' "mobile App Group (share)"
 hook src/main/main-window.ts 'openSelfHostServerWindow(' "desktop server menu item"
+hook src/main/provider-use-settings-store.ts 'SELF_HOST_REMOVED_PROVIDERS' "removed providers always off (OpenCode)"
+hook src/renderer/src/features/settings/stores/general-store.ts 'isSelfHostRemovedProvider(provider)' "Settings hides removed providers"
+hook src/renderer/src/features/onboarding/onboarding-provider-rows.ts 'isSelfHostRemovedProvider(option.id)' "setup hides removed providers"
+hook src/renderer/src/features/onboarding/FirstRunChoice.tsx 'isSelfHostRemovedProvider(FREE_PROVIDER)' "no free-models row"
+hook apps/mobile/src/features/servers/model/provider-admin.ts 'isSelfHostRemovedProvider(provider)' "phone hides removed providers"
 hook src/main/provider-runtime-releases.ts 'imaaroncao/openbot/main/provider-runtime-blocklist.json' "provider blocklist from the fork"
 
 # A second `onBeforeRequest` on a session replaces the guard's listener.
