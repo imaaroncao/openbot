@@ -3,17 +3,25 @@
 # and sign-in codes in the API answer instead of email. Never use it on a public server.
 services:
   caddy:
+    environment:
+      LOCAL_TEST_IP: ${LOCAL_TEST_IP:-127.0.0.1}
     volumes:
       - ./Caddyfile.local-test:/etc/caddy/Caddyfile:ro
       - ./data-local-test/caddy:/data
   auth-api:
     environment:
       AUTH_EXPOSE_DEVELOPMENT_CODE: "true"
+      # The apps check (LOCAL_TEST_SIGNAL_URL=ws://<docker host>:18443/v1/signal) needs no test DNS
+      # or CA on the desktop and phone; the apps allow ws: only on private addresses.
+      REMOTE_SIGNAL_URL: ${LOCAL_TEST_SIGNAL_URL:-wss://signal.openbot.test/v1/signal}
     # Plain HTTP for a simulator or phone on this network (the mobile app allows HTTP on private IPs).
     ports:
       - "18787:8787"
     volumes:
       - ./data-local-test/auth-api:/data
+  signal:
+    ports:
+      - "18443:8443"
   coturn:
     # Both peers and the relay share a private network here, which upstream's config refuses
     # (denied-peer-ip). scripts/local-e2e.sh writes upstream's config plus an allowed-peer-ip line.

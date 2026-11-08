@@ -28,7 +28,7 @@ export const DISABLED_AUTH_API_URL = "http://127.0.0.1:9";
 export interface SelfHostConfig {
   /** HTTPS origin of the account service (the auth-api Worker), such as `https://api.example.com`. */
   authApiUrl: string;
-  /** `wss:` URL of Signal, such as `wss://signal.example.com/v1/signal`. */
+  /** `wss:` URL of Signal, such as `wss://signal.example.com/v1/signal`. Empty: not set. */
   signalUrl: string;
 }
 
@@ -109,10 +109,8 @@ export function resolveSelfHostConfig(options: {
   const environmentApi = normalizeAuthApiUrl(options.environment.OPENBOT_AUTH_API_URL);
   if (environmentApi) {
     const signalUrl = normalizeSignalUrl(options.environment.OPENBOT_REMOTE_SIGNAL_URL);
-    return {
-      config: { authApiUrl: environmentApi, signalUrl: signalUrl ?? suggestSignalUrl(environmentApi) },
-      source: "environment",
-    };
+    // Upstream lets OPENBOT_REMOTE_SIGNAL_URL stay unset; do not invent one.
+    return { config: { authApiUrl: environmentApi, signalUrl: signalUrl ?? "" }, source: "environment" };
   }
   const user = readConfigFile(userConfigPath(options.userDataDirectory));
   if (user) return { config: user, source: "user" };

@@ -58,10 +58,12 @@ for _ in $(seq 1 60); do
 done
 "${CURL[@]}" "https://$API_DOMAIN/health/live"; echo
 "${CURL[@]}" "https://$API_DOMAIN/.well-known/jwks.json" | head -c 120; echo
-code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$DIR/data-local-test/caddy/caddy/pki/authorities/local/root.crt" \
-  --resolve "$API_DOMAIN:443:$HOST_IP" "https://$API_DOMAIN/__scheduled")"
-[[ "$code" == 404 ]] || { echo "✗ /__scheduled must not be reachable from outside (got $code)" >&2; exit 1; }
-echo "  /__scheduled from outside: 404 ✓"
+for path in /cdn-cgi/handler/scheduled /__scheduled; do
+  code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$DIR/data-local-test/caddy/caddy/pki/authorities/local/root.crt" \
+    --resolve "$API_DOMAIN:443:$HOST_IP" "https://$API_DOMAIN$path?cron=*")"
+  [[ "$code" == 404 ]] || { echo "✗ $path must not be reachable from outside (got $code)" >&2; exit 1; }
+  echo "  $path from outside: 404 ✓"
+done
 
 echo "▸ 2. Account, host and session tickets"
 TICKETS="$(docker run --rm --network "${PROJECT}_default" -v "$DIR/scripts:/e2e:ro" node:24-bookworm-slim \

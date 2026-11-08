@@ -2,6 +2,8 @@
 	# Local test: certificates from Caddy's own CA, no Let's Encrypt.
 	local_certs
 	auto_https disable_redirects
+	# Apps that connect to Signal by IP send no TLS server name.
+	default_sni {$LOCAL_TEST_IP:127.0.0.1}
 }
 
 {$API_DOMAIN} {
@@ -13,5 +15,10 @@
 }
 
 {$SIGNAL_DOMAIN} {
+	reverse_proxy signal:8443
+}
+
+# Signal by IP, for the desktop and phone apps check (wss without DNS).
+{$LOCAL_TEST_IP:127.0.0.1} {
 	reverse_proxy signal:8443
 }

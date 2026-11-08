@@ -49,7 +49,7 @@ echo "▸ D1 migrations"
 (
   sleep 60
   while :; do
-    curl -fsS -o /dev/null "http://127.0.0.1:$PORT/__scheduled?cron=*/5+*+*+*+*" || true
+    curl -fsS -o /dev/null "http://127.0.0.1:$PORT/cdn-cgi/handler/scheduled?cron=*/5+*+*+*+*" || true
     sleep 300
   done
 ) &

@@ -79,6 +79,8 @@ selfhost/server/scripts/local-e2e.sh          # 构建并启动，然后检查
 selfhost/server/scripts/local-e2e.sh --down   # 停止
 ```
 
+如果想用真实 App 在本机连这套服务器，可以这样启动：`LOCAL_TEST_IP=<colima 地址> LOCAL_TEST_SIGNAL_URL=wss://<colima 地址>/v1/signal`。这时 Caddy 会给这个 IP 签发证书，账号服务开在 `http://<colima 地址>:18787`。电脑端用 `NODE_EXTRA_CA_CERTS` 指向 `data-local-test/caddy/caddy/pki/authorities/local/root.crt`，模拟器用 `xcrun simctl keychain <udid> add-root-cert` 导入这个 CA。
+
 它会检查三件事：Caddy 的 HTTPS 是否正常；登录、注册主机、签发票据是否正常；两端能否经 Signal 建立 WebRTC 连接，并分别在 P2P 直连和强制 TURN 中继下传输数据。本地测试使用 Caddy 自签证书，账号服务直接返回验证码；这两点只用于本地测试，VPS 上不会这样。
 
 数据在 VPS 的 `/opt/openbot-selfhost/selfhost/server/data`（`auth-api/` 是 D1 SQLite 和 R2 文件，`caddy/` 是证书），重新部署时保留。
