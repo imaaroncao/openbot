@@ -21,6 +21,16 @@ services:
       OPENBOT_DISPLAY_SIZE: ${OPENBOT_DISPLAY_SIZE:-1280x800}
     volumes:
       - openbot-data:/data
+    # A fixed address: the TURN server (scripts/deploy.sh) relays to this one private address only.
+    networks:
+      openbot:
+        ipv4_address: 172.31.250.10
+
+networks:
+  openbot:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
 
 volumes:
   openbot-data:

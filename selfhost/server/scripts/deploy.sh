@@ -85,7 +85,10 @@ scp -q "$ARCHIVE" "$TARGET:$REMOTE_DIR/openbot-selfhost.tar.gz"
   mkdir -p selfhost/server/data/auth-api selfhost/server/data/caddy
   # The address of the network card that reaches the internet: coturn relays on it.
   private_ip=\$(ip route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if (\$i == \"src\") print \$(i + 1)}')
-  { cat remote/coturn/turnserver.conf; echo \"relay-ip=\$private_ip\"; } > selfhost/server/data/coturn.conf
+  # The always-on host (host/compose.yaml) has the fixed address 172.31.250.10 on its own Docker
+  # network. Upstream's config denies relays to private addresses, so that one address is allowed:
+  # a phone behind a strict NAT reaches the host only through the relay.
+  { cat remote/coturn/turnserver.conf; echo \"relay-ip=\$private_ip\"; echo allowed-peer-ip=172.31.250.10; } > selfhost/server/data/coturn.conf
   if [ \"\$private_ip\" != '$TURN_PUBLIC_IP' ]; then export TURN_PRIVATE_IP=\"\$private_ip\"; fi
   echo \"  TURN relay on \$private_ip, public $TURN_PUBLIC_IP\"
   # The account service container runs as the image user node (UID 1000).

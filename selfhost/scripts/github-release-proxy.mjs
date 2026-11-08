@@ -50,8 +50,10 @@ const server = createServer(async (request, response) => {
     console.log(`github-release-proxy: ${owner}/${repo}@${tag}/${name}`);
     response.writeHead(302, { location }).end();
   } catch (error) {
-    console.error(`github-release-proxy: ${error instanceof Error ? error.message : error}`);
-    response.writeHead(502).end();
+    // The API fails now and then too: the direct path may work at that moment.
+    console.error(`github-release-proxy: ${error instanceof Error ? error.message : error}; trying the direct URL`);
+    const direct = `https://github.com/${[owner, repo].join("/")}/releases/download/${[tag, name].map(encodeURIComponent).join("/")}`;
+    response.writeHead(302, { location: direct }).end();
   }
 });
 server.listen(port, "127.0.0.1", () => {

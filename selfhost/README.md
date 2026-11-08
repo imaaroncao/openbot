@@ -121,6 +121,8 @@ selfhost/server/scripts/deploy-host.sh root@你的VPS 你的邮箱 "OpenBot VPS"
 
 `build-linux-host.sh` 从 GitHub 上本 fork 的 `selfhost` 分支克隆代码，所以先推送你的改动。构建在 `ubuntu:24.04` 容器里进行，VPS 本身只需要 Docker；镜像使用官方的 `docker/Dockerfile` 和 `seccomp.json`（Electron 沙箱保持开启）。
 
+主机容器的内网地址固定为 `172.31.250.10`。TURN 默认拒绝中继到内网地址，`deploy.sh` 只为这一个地址开了例外，所以手机在严格 NAT（例如移动网络）下也能经中继连到主机。
+
 `deploy-host.sh` 用 `SERVER_CLAIMS_ADMIN_TOKEN` 向你的账号服务申请一次性认领码，让主机直接以你的邮箱登录，不需要验证码。之后在桌面端和手机端用同一个邮箱登录，服务器列表里就有这台主机。数据在 Docker 卷 `openbot-host_openbot-data`。
 
 ```sh
@@ -225,4 +227,5 @@ selfhost/scripts/sync-upstream.sh --tag   # 或者只合并最新的正式版本
 - **TURN 只开了 3478（UDP/TCP）**，没有开 5349 的 TLS。绝大多数网络够用；如果某个网络只放行 443，就连不上中继。
 - **账号是独立的**：你服务器上的账号和 openbot.run 上的账号没有关系，需要重新登录。
 - **Linux 无界面主机**：官方的 `install-server.sh` 和 Docker 镜像连接的是 openbot.run，不要用。用本分支的 `build-linux-host.sh` 和 `deploy-host.sh`（见 [VPS 上的常驻 OpenBot 主机](#可选vps-上的常驻-openbot-主机)）。
+- **MCP 应用的 OAuth 登录**：连接需要 OAuth 的 MCP 应用时，App 会把 `https://openbot.run/oauth/mcp-client.json` 作为客户端标识告诉第三方授权服务器，由第三方去读取这个文件。这不是 App 发往 openbot.run 的请求，但这类登录依赖官方网站上的这个文件。
 - 第三方服务的请求不受影响，由你自己选择使用：OpenAI、Anthropic 等模型服务商，npm、GitHub 上的 CLI 版本检查，Hugging Face 语音模型下载，内置浏览器访问的网页。
