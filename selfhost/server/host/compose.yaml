@@ -1,0 +1,26 @@
+# Self-hosted fork: the always-on OpenBot host on the VPS. Its agents, embedded browser and
+# Computer Use run on virtual displays inside the container; you use them from the desktop app,
+# the phone, and remote desktop. The image comes from scripts/build-linux-host.sh.
+#
+# Copied to /opt/openbot-host/compose.yaml by scripts/deploy-host.sh, next to seccomp.json.
+name: openbot-host
+
+services:
+  openbot:
+    image: openbot-selfhost-host:latest
+    restart: unless-stopped
+    # Upstream's profile: Docker's default plus user namespaces, so the Electron sandbox stays on.
+    security_opt:
+      - seccomp=./seccomp.json
+      - no-new-privileges:true
+    shm_size: 1g
+    stop_grace_period: 60s
+    environment:
+      OPENBOT_AUTH_API_URL: https://${API_DOMAIN:?API_DOMAIN is required}
+      OPENBOT_REMOTE_SIGNAL_URL: wss://${SIGNAL_DOMAIN:?SIGNAL_DOMAIN is required}/v1/signal
+      OPENBOT_DISPLAY_SIZE: ${OPENBOT_DISPLAY_SIZE:-1280x800}
+    volumes:
+      - openbot-data:/data
+
+volumes:
+  openbot-data:

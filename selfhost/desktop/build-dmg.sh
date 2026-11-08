@@ -52,6 +52,9 @@ SELFHOST_AUTH_API_URL="${SELFHOST_AUTH_API_URL:-}" SELFHOST_SIGNAL_URL="${SELFHO
 '
 
 # 2. Dependencies and native runtimes, as upstream's dist:mac does.
+# GitHub release downloads go through the GitHub API (see the script for why).
+# shellcheck disable=SC1091
+source selfhost/scripts/github-release-proxy.sh && start_github_release_proxy
 [[ -d node_modules ]] || bun install --frozen-lockfile
 bun run voice:prepare-runtime
 bun run prepare:remote-desktop-runtime

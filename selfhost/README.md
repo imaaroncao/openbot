@@ -54,7 +54,22 @@ selfhost/server/oracle/create-instance.sh --retry   # 创建 VCN、放行端口�
    selfhost/server/scripts/init-secrets.sh
    ```
 
-   然后编辑 `selfhost/server/.env` 顶部：域名、`TURN_PUBLIC_IP`、`ACME_EMAIL`，以及 **SMTP**（登录验证码通过邮件发送；Gmail 用 `smtp.gmail.com` 加[应用专用密码](https://myaccount.google.com/apppasswords)，端口 465）。
+   然后编辑 `selfhost/server/.env` 顶部：域名、`TURN_PUBLIC_IP`、`ACME_EMAIL`，以及 **SMTP**（登录验证码通过邮件发送）。两种选择：
+
+   - **Cloudflare Email Service**（域名在 Cloudflare 时推荐）：控制台 → Email → Email Sending 接入一个发信子域名（例如 `openbot.你的域名`），再创建一个有 "Email Sending: Edit" 权限的 API token。
+
+     ```sh
+     EMAIL_SMTP_HOST=smtp.mx.cloudflare.net
+     EMAIL_SMTP_PORT=465
+     EMAIL_SMTP_USERNAME=api_token          # 就是这几个字，不是邮箱
+     EMAIL_SMTP_PASSWORD=<你的 API token>
+     EMAIL_FROM=noreply@openbot.你的域名
+     ```
+
+     免费套餐只能发给已验证的收件地址（Email Routing → Destination addresses）；发给任意地址需要 Workers Paid。
+   - **Gmail**：`smtp.gmail.com`、端口 465，密码用[应用专用密码](https://myaccount.google.com/apppasswords)。
+
+   `.env` 只在你的 Mac 和 VPS 上（权限 600），git 不跟踪。部署后服务只依赖 VPS，Mac 关机不影响。
 
 4. **部署**：
 
@@ -95,6 +110,25 @@ docker compose --env-file .env ps
 docker compose --env-file .env logs -f auth-api signal
 ```
 
+### 可选：VPS 上的常驻 OpenBot 主机
+
+让 VPS 本身也成为一台 OpenBot 主机：24 小时运行智能体、内置浏览器和 Computer Use（在容器内的虚拟显示器上），你从桌面端、手机端或远程桌面使用它。建议至少 2 核 / 8 GB 内存（例如 Hostinger KVM 2，Ubuntu 24.04 或更新版本）。
+
+```sh
+selfhost/server/scripts/build-linux-host.sh root@你的VPS              # 在 VPS 上构建 Linux 版和镜像（20-40 分钟）
+selfhost/server/scripts/deploy-host.sh root@你的VPS 你的邮箱 "OpenBot VPS"   # 启动并登录
+```
+
+`build-linux-host.sh` 从 GitHub 上本 fork 的 `selfhost` 分支克隆代码，所以先推送你的改动。构建在 `ubuntu:24.04` 容器里进行，VPS 本身只需要 Docker；镜像使用官方的 `docker/Dockerfile` 和 `seccomp.json`（Electron 沙箱保持开启）。
+
+`deploy-host.sh` 用 `SERVER_CLAIMS_ADMIN_TOKEN` 向你的账号服务申请一次性认领码，让主机直接以你的邮箱登录，不需要验证码。之后在桌面端和手机端用同一个邮箱登录，服务器列表里就有这台主机。数据在 Docker 卷 `openbot-host_openbot-data`。
+
+```sh
+cd /opt/openbot-host
+docker compose exec openbot openbot status
+docker compose logs -f openbot
+```
+
 ---
 
 ## 2. 桌面端 DMG
@@ -105,6 +139,8 @@ selfhost/desktop/build-dmg.sh --no-notarize # 只签名
 ```
 
 输出 `dist/OpenBot-<版本>-arm64.dmg`。`selfhost.env` 里的服务器地址会作为默认值写进包里（`Contents/Resources/self-host.json`）。
+
+DMG 和 Linux 版构建时，GitHub Release 文件（Electron、electron-builder 工具、运行时、cua-driver）经 GitHub API 下载（`selfhost/scripts/github-release-proxy.sh`），因为 `github.com/…/releases/download` 有时会连续几小时返回 504。每个文件仍做校验。没有 `GITHUB_TOKEN` 时，API 限额是每小时 60 次，一次构建用不到 20 次。
 
 **第一次打开**时，macOS 会提示"OpenBot 想要使用钥匙串中的 'OpenBot Safe Storage'"：输入 Mac 登录密码，选**始终允许**。这是因为应用的签名从官方换成了你的证书，你原来的数据和登录状态都会保留。
 
@@ -177,7 +213,8 @@ selfhost/scripts/sync-upstream.sh --tag   # 或者只合并最新的正式版本
 | `apps/mobile/src/features/{push-notifications,share}/…` | App Group 跟随你的 Bundle ID |
 | `apps/mobile/app.config.js` + `selfhost.config.js`（新增） | 你的 Bundle ID/Team，去掉关联域名、EAS 项目和 OTA |
 | `selfhost/desktop/electron-builder.selfhost.yml`（新增） | 你的 appId，无更新源，无官方 provisioning profile |
-| `selfhost/server/*`（新增） | VPS 服务端：Caddy + 账号服务 + Signal + TURN |
+| `selfhost/server/*`（新增） | VPS 服务端：Caddy + 账号服务 + Signal + TURN；常驻 Linux 主机 |
+| `apps/auth-api/src/server/smtp-email-delivery.ts` | SMTP 用户名不再要求是邮箱（Cloudflare 用 `api_token`） |
 
 ---
 
@@ -187,5 +224,5 @@ selfhost/scripts/sync-upstream.sh --tag   # 或者只合并最新的正式版本
 - coturn 在 VPS 上的中继地址由 `deploy.sh` 自动设置（`relay-ip` = 出口网卡 IP，`external-ip` = 公网 IP/私网 IP），适用于 Oracle、AWS 这类 1:1 NAT 的云主机。
 - **TURN 只开了 3478（UDP/TCP）**，没有开 5349 的 TLS。绝大多数网络够用；如果某个网络只放行 443，就连不上中继。
 - **账号是独立的**：你服务器上的账号和 openbot.run 上的账号没有关系，需要重新登录。
-- **Linux 无界面主机**：官方的 `install-server.sh` 和 Docker 镜像连接的是 openbot.run。如果要在 VPS 上再跑一台 OpenBot 主机，需要用本分支构建 Linux 版（`bun run dist:linux`，在 Linux 机器上），并设置 `OPENBOT_AUTH_API_URL`、`OPENBOT_REMOTE_SIGNAL_URL`。
+- **Linux 无界面主机**：官方的 `install-server.sh` 和 Docker 镜像连接的是 openbot.run，不要用。用本分支的 `build-linux-host.sh` 和 `deploy-host.sh`（见 [VPS 上的常驻 OpenBot 主机](#可选vps-上的常驻-openbot-主机)）。
 - 第三方服务的请求不受影响，由你自己选择使用：OpenAI、Anthropic 等模型服务商，npm、GitHub 上的 CLI 版本检查，Hugging Face 语音模型下载，内置浏览器访问的网页。
