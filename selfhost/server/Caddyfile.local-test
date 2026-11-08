@@ -1,0 +1,17 @@
+{
+	# Local test: certificates from Caddy's own CA, no Let's Encrypt.
+	local_certs
+	auto_https disable_redirects
+}
+
+{$API_DOMAIN} {
+	@internal path /__scheduled* /cdn-cgi/*
+	respond @internal 404
+	reverse_proxy auth-api:8787 {
+		header_up X-Forwarded-Proto https
+	}
+}
+
+{$SIGNAL_DOMAIN} {
+	reverse_proxy signal:8443
+}

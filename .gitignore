@@ -76,3 +76,5 @@ keys
 /selfhost/.build/
 /selfhost/*.log
 /selfhost/server/auth-api/bundle/
+/selfhost/server/data-local-test/
+/selfhost/server/.env.local-test

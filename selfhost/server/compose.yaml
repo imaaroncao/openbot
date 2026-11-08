@@ -32,7 +32,7 @@ services:
       context: ../..
       dockerfile: selfhost/server/auth-api/Dockerfile
     restart: unless-stopped
-    env_file: .env
+    env_file: ${SELFHOST_ENV_FILE:-.env}
     environment:
       AUTH_API_PUBLIC_ORIGIN: https://${API_DOMAIN}
       REMOTE_SIGNAL_URL: wss://${SIGNAL_DOMAIN}/v1/signal
@@ -59,7 +59,8 @@ services:
       REMOTE_TLS_DISABLED: "true"
       REMOTE_TRUST_PROXY: "true"
       REMOTE_TICKET_PUBLIC_KEYS: ${REMOTE_TICKET_PUBLIC_JWKS:?run scripts/init-secrets.sh}
-      REMOTE_CONTROL_PLANE_URL: https://${API_DOMAIN}
+      # Inside the Compose network, so no request leaves the VPS and comes back (no NAT hairpin).
+      REMOTE_CONTROL_PLANE_URL: http://auth-api:8787
       REMOTE_SESSION_SECRET: ${REMOTE_SESSION_SECRET:?run scripts/init-secrets.sh}
       REMOTE_AUTH_WEBHOOK_SECRET: ${REMOTE_AUTH_WEBHOOK_SECRET:?run scripts/init-secrets.sh}
       REMOTE_METRICS_TOKEN: ${REMOTE_METRICS_TOKEN:?run scripts/init-secrets.sh}
@@ -92,11 +93,17 @@ services:
     # TURN needs many UDP relay ports; host networking avoids a huge port list.
     network_mode: host
     environment:
-      TURN_PUBLIC_IP: ${TURN_PUBLIC_IP:?TURN_PUBLIC_IP is required}
+      # `public/private` on a VPS behind 1:1 NAT (Oracle Cloud, AWS): deploy.sh finds the private IP.
+      TURN_PUBLIC_IP: ${TURN_PUBLIC_IP:?TURN_PUBLIC_IP is required}${TURN_PRIVATE_IP:+/${TURN_PRIVATE_IP}}
       TURN_REALM: ${TURN_DOMAIN:-${SIGNAL_DOMAIN}}
       TURN_SHARED_SECRET: ${TURN_SHARED_SECRET:?run scripts/init-secrets.sh}
       TURN_MIN_PORT: ${TURN_MIN_PORT:-49160}
       TURN_MAX_PORT: ${TURN_MAX_PORT:-49200}
+    volumes:
+      # Upstream's remote/coturn/turnserver.conf plus `relay-ip`, written by deploy.sh. With host
+      # networking coturn sees the Docker bridges too, and without a fixed relay address it can
+      # hand out a bridge address that no client reaches.
+      - ./data/coturn.conf:/etc/coturn/openbot.conf:ro
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777

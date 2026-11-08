@@ -1,0 +1,21 @@
+# Self-hosted fork: overlay for scripts/local-e2e.sh. It runs the same images as compose.yaml on a
+# local Docker (colima), with Caddy's own test CA instead of Let's Encrypt, a separate data folder,
+# and sign-in codes in the API answer instead of email. Never use it on a public server.
+services:
+  caddy:
+    volumes:
+      - ./Caddyfile.local-test:/etc/caddy/Caddyfile:ro
+      - ./data-local-test/caddy:/data
+  auth-api:
+    environment:
+      AUTH_EXPOSE_DEVELOPMENT_CODE: "true"
+    # Plain HTTP for a simulator or phone on this network (the mobile app allows HTTP on private IPs).
+    ports:
+      - "18787:8787"
+    volumes:
+      - ./data-local-test/auth-api:/data
+  coturn:
+    # Both peers and the relay share a private network here, which upstream's config refuses
+    # (denied-peer-ip). scripts/local-e2e.sh writes upstream's config plus an allowed-peer-ip line.
+    volumes:
+      - ./data-local-test/coturn.conf:/etc/coturn/openbot.conf:ro

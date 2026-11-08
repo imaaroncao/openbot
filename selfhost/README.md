@@ -71,6 +71,16 @@ selfhost/server/oracle/create-instance.sh --retry   # 创建 VCN、放行端口�
    SELFHOST_SIGNAL_URL=wss://signal.example.com/v1/signal
    ```
 
+**部署前（或每次合并官方代码后）先在本机跑一遍端到端测试**。用的是和 VPS 完全相同的 4 个容器，跑在本机 Docker 上：
+
+```sh
+brew install colima docker docker-compose && colima start --network-address   # 第一次
+selfhost/server/scripts/local-e2e.sh          # 构建并启动，然后检查
+selfhost/server/scripts/local-e2e.sh --down   # 停止
+```
+
+它会检查三件事：Caddy 的 HTTPS 是否正常；登录、注册主机、签发票据是否正常；两端能否经 Signal 建立 WebRTC 连接，并分别在 P2P 直连和强制 TURN 中继下传输数据。本地测试使用 Caddy 自签证书，账号服务直接返回验证码；这两点只用于本地测试，VPS 上不会这样。
+
 数据在 VPS 的 `/opt/openbot-selfhost/selfhost/server/data`（`auth-api/` 是 D1 SQLite 和 R2 文件，`caddy/` 是证书），重新部署时保留。
 
 **可选：iPhone 推送**。在 developer.apple.com → Keys 创建 APNs key，把 Key ID 和 `.p8` 内容填进 `.env` 的 `APNS_KEY_ID`、`APNS_PRIVATE_KEY`，然后重新部署。
@@ -171,6 +181,7 @@ selfhost/scripts/sync-upstream.sh --tag   # 或者只合并最新的正式版本
 ## 已知限制
 
 - **官方专属功能不可用**：托管服务器（hosted servers）、OpenBot GitHub App、Slack / Discord / Telegram 官方机器人、`openbot.run` 网站上的插件市场链接。这些需要只有官方才有的密钥。
+- coturn 在 VPS 上的中继地址由 `deploy.sh` 自动设置（`relay-ip` = 出口网卡 IP，`external-ip` = 公网 IP/私网 IP），适用于 Oracle、AWS 这类 1:1 NAT 的云主机。
 - **TURN 只开了 3478（UDP/TCP）**，没有开 5349 的 TLS。绝大多数网络够用；如果某个网络只放行 443，就连不上中继。
 - **账号是独立的**：你服务器上的账号和 openbot.run 上的账号没有关系，需要重新登录。
 - **Linux 无界面主机**：官方的 `install-server.sh` 和 Docker 镜像连接的是 openbot.run。如果要在 VPS 上再跑一台 OpenBot 主机，需要用本分支构建 Linux 版（`bun run dist:linux`，在 Linux 机器上），并设置 `OPENBOT_AUTH_API_URL`、`OPENBOT_REMOTE_SIGNAL_URL`。

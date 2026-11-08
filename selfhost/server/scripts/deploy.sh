@@ -83,10 +83,15 @@ scp -q "$ARCHIVE" "$TARGET:$REMOTE_DIR/openbot-selfhost.tar.gz"
   tar -xzf openbot-selfhost.tar.gz && rm openbot-selfhost.tar.gz
   chmod 600 selfhost/server/.env
   mkdir -p selfhost/server/data/auth-api selfhost/server/data/caddy
+  # The address of the network card that reaches the internet: coturn relays on it.
+  private_ip=\$(ip route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if (\$i == \"src\") print \$(i + 1)}')
+  { cat remote/coturn/turnserver.conf; echo \"relay-ip=\$private_ip\"; } > selfhost/server/data/coturn.conf
+  if [ \"\$private_ip\" != '$TURN_PUBLIC_IP' ]; then export TURN_PRIVATE_IP=\"\$private_ip\"; fi
+  echo \"  TURN relay on \$private_ip, public $TURN_PUBLIC_IP\"
   # The account service container runs as the image user node (UID 1000).
   $SUDO chown -R 1000:1000 selfhost/server/data/auth-api
   cd selfhost/server
-  $SUDO env OPENBOT_SOURCE_COMMIT='$HEAD_COMMIT' docker compose --env-file .env up -d --build --remove-orphans
+  $SUDO env OPENBOT_SOURCE_COMMIT='$HEAD_COMMIT' TURN_PRIVATE_IP=\"\${TURN_PRIVATE_IP:-}\" docker compose --env-file .env up -d --build --remove-orphans
   $SUDO docker compose --env-file .env ps"
 
 echo "▸ Waiting for https://$API_DOMAIN and https://$SIGNAL_DOMAIN"
