@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./browser": "./src/browser.ts",
-    "./node": "./src/node.ts"
+    "./node": "./src/node.ts",
+    "./self-host": "./src/self-host.ts"
   },
   "scripts": {
     "typecheck": "bun ../../scripts/type-checker.ts --noEmit -p tsconfig.json"

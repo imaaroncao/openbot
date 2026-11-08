@@ -1,0 +1,18 @@
+# Self-hosted fork: overlay for `selfhost/desktop/build-dmg.sh`. It keeps electron-builder.yml as
+# upstream ships it; electron-builder deep-merges this file over it (arrays are concatenated).
+# build-dmg.sh adds the values that come from selfhost/selfhost.env on the command line:
+# appId, mac.identity and mac.extendInfo.ElectronTeamID.
+extends: ./electron-builder.yml
+copyright: Self-hosted build of OpenBot (PolyForm Noncommercial 1.0.0), for personal use.
+# No update feed: an installed build must never replace itself with the vendor's release.
+# Update by merging upstream and building again (selfhost/scripts/sync-upstream.sh).
+publish: null
+extraResources:
+  # Default account service and Signal, read by src/main/self-host/config.ts.
+  - from: selfhost/.build/self-host.json
+    to: self-host.json
+mac:
+  # Without associated domains and a team-identifier entitlement the app needs no provisioning
+  # profile: a Developer ID signature and notarization are enough.
+  entitlements: selfhost/desktop/entitlements.mac.plist
+  notarize: true

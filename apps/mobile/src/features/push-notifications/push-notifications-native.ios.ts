@@ -5,7 +5,8 @@ import type { NotificationPermission } from "@/features/settings/model/push-noti
 import { type PushNotificationsNative, SOUND_PREVIEW_KEY } from "./push-notifications-native.types";
 
 /** The App Group of the app and its extensions. `app.json` names the same group. */
-const APP_GROUP = "group.run.openbot.mobile";
+// Self-hosted fork: `selfhost/ios/build-testflight.sh` sets the App Group of your bundle ID.
+const APP_GROUP = process.env.EXPO_PUBLIC_OPENBOT_APP_GROUP || "group.run.openbot.mobile";
 /** `NotificationService.swift` reads this file. */
 const KEYS_FILE = "push-notifications.json";
 

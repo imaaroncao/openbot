@@ -1,4 +1,5 @@
 import { ANALYTICS_GENERATIONS } from "@openbot/telemetry";
+import { vendorTelemetryEnabled } from "@openbot/telemetry/self-host";
 import { OpenPanel, type TrackHandlerPayload } from "@openpanel/react-native";
 import * as Application from "expo-application";
 import { Platform } from "react-native";
@@ -49,6 +50,8 @@ export const mobileAnalytics = new MobileAnalytics(() => {
   const clientId = process.env.EXPO_PUBLIC_OPENPANEL_CLIENT_ID;
   const clientSecret = process.env.EXPO_PUBLIC_OPENPANEL_CLIENT_SECRET;
   if (
+    // Self-hosted fork: no analytics or error reports to the vendor.
+    !vendorTelemetryEnabled ||
     __DEV__ ||
     process.env.EXPO_PUBLIC_APP_ENV !== "production" ||
     !clientId ||

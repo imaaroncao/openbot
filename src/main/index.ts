@@ -1,3 +1,5 @@
+// Self-hosted fork: must stay the first import (server address + vendor network guard).
+import "./self-host/bootstrap";
 import { uptime } from "node:os";
 import { join, resolve } from "node:path";
 import { parseInviteUrl, selfHostedApiOrigin } from "@openbot/contracts/invite-links";

@@ -55,7 +55,8 @@ declare class ShareExtensionModule extends NativeModule {
 const native = requireOptionalNativeModule<ShareExtensionModule>("OpenBotShareExtension");
 
 /** The App Group of the app and its extensions. `app.json` names the same group. */
-const APP_GROUP = "group.run.openbot.mobile";
+// Self-hosted fork: `selfhost/ios/build-testflight.sh` sets the App Group of your bundle ID.
+const APP_GROUP = process.env.EXPO_PUBLIC_OPENBOT_APP_GROUP || "group.run.openbot.mobile";
 /** `plugins/share-extension/ShareExtensionData.swift` and `NotificationService.swift` read this file. */
 const DIRECTORY_FILE = "share-extension.json";
 /**

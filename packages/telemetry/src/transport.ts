@@ -1,4 +1,5 @@
 import { type ReportTransport, telemetryIO } from "./queue";
+import { vendorTelemetryEnabled } from "./self-host";
 
 export function openPanelTransport(options: {
   clientId: string;
@@ -10,6 +11,8 @@ export function openPanelTransport(options: {
   const send = options.fetch ?? globalThis.fetch;
   return (report, signal) =>
     telemetryIO(async () => {
+      // Self-hosted fork: drop the report as delivered, so nothing is sent or queued again.
+      if (!vendorTelemetryEnabled) return true;
       const response = await send(options.endpoint ?? "https://analytics.openbot.run/api/track", {
         method: "POST",
         signal,

@@ -7,8 +7,13 @@ const { join } = require("node:path");
 // key that sends.
 const GOOGLE_SERVICES_FILE = "./google-services.json";
 
+// Self-hosted fork: your own bundle IDs and team, and no Expo OTA updates (`selfhost.config.js`).
+const applySelfHost = require("./selfhost.config.js");
+
 /** @param {{ config: import('expo/config').ExpoConfig }} context */
 module.exports = ({ config }) =>
-  existsSync(join(__dirname, GOOGLE_SERVICES_FILE))
-    ? { ...config, android: { ...config.android, googleServicesFile: GOOGLE_SERVICES_FILE } }
-    : config;
+  applySelfHost(
+    existsSync(join(__dirname, GOOGLE_SERVICES_FILE))
+      ? { ...config, android: { ...config.android, googleServicesFile: GOOGLE_SERVICES_FILE } }
+      : config,
+  );

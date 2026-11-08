@@ -1,0 +1,19 @@
+{
+	email {$ACME_EMAIL}
+}
+
+# The account service.
+{$API_DOMAIN} {
+	encode zstd gzip
+	# Local-runtime endpoints of workerd/wrangler: never reachable from outside.
+	@internal path /__scheduled* /cdn-cgi/*
+	respond @internal 404
+	reverse_proxy auth-api:8787 {
+		header_up X-Forwarded-Proto https
+	}
+}
+
+# Signal (WebSocket). TLS ends here; Signal listens without TLS inside the network.
+{$SIGNAL_DOMAIN} {
+	reverse_proxy signal:8443
+}

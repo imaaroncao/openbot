@@ -43,8 +43,9 @@ export interface LatestReleaseContext {
  * block list, not an allow list: a new release is offered at once, and only a version named here is
  * held back. A list that cannot be read blocks nothing.
  */
+// Self-hosted fork: read the list from the fork, which follows upstream through `selfhost/scripts/sync-upstream.sh`.
 const BLOCKED_VERSIONS_URL =
-  "https://raw.githubusercontent.com/nightly-labs/openbot/main/provider-runtime-blocklist.json";
+  "https://raw.githubusercontent.com/imaaroncao/openbot/main/provider-runtime-blocklist.json";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_METADATA_BYTES = 4 * 1024 * 1024;

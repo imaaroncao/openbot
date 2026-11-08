@@ -38,6 +38,7 @@ import {
 import { CodePane, EmailPane, HELP_MOVE, OptionsPane, type PaneMotion } from "@/features/auth/components/sign-in-panes";
 import { useMobileSession } from "@/features/auth/context/mobile-session-context";
 import { type SignInStep, useEmailSignIn } from "@/features/auth/model/use-email-sign-in";
+import { SelfHostServerBadge } from "@/self-host/server-badge";
 import { BLOUB_MOVE_MS } from "@/shared/components/bloub-stage/bloub-look";
 import { useBloubStage, useBloubStageRequest } from "@/shared/components/bloub-stage/bloub-stage-context";
 import {
@@ -459,6 +460,8 @@ export function SignInScreen({ notice }: { notice?: SignInNotice }) {
           </Animated.View>
         ) : null}
       </ScrollView>
+      {/* Self-hosted fork: the account service for email sign-in. */}
+      <SelfHostServerBadge visible={pane.key === "options" && !scannerMounted} />
       {scannerMounted ? (
         <View style={StyleSheet.absoluteFill} pointerEvents={scan ? "box-none" : "none"}>
           <QrScanner

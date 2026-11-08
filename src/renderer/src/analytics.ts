@@ -25,6 +25,7 @@ import {
 import { isBoolean, isDynamicRecord, isFunction, isNumber, isOneOf, isString } from "@openbot/contracts/runtime-values";
 import { normalizeEmailAddress } from "@openbot/contracts/validation";
 import { ANALYTICS_GENERATIONS } from "@openbot/telemetry";
+import { vendorTelemetryEnabled } from "@openbot/telemetry/self-host";
 import { OpenPanelBase, type OpenPanelOptions } from "@openpanel/web";
 import {
   ANALYTICS_SCHEMA_VERSION,
@@ -731,6 +732,8 @@ const UPDATE_PHASES = new Set([
 ]);
 
 function shouldEnableDesktopAnalytics(appInfo: AppInfo, productionBuild: boolean): boolean {
+  // Self-hosted fork: product analytics stay off in every build.
+  if (!vendorTelemetryEnabled) return false;
   return appInfo.analyticsCaptureUrl !== undefined || (productionBuild && appInfo.variant === "production");
 }
 

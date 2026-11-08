@@ -1,6 +1,5 @@
 import { type AvatarMimeType, isValidAvatarImage } from "@openbot/contracts/avatar-images";
 import { AVATAR_IMAGE_LIMITS } from "@openbot/contracts/input-limits";
-import { OPENBOT_CONTROL_PLANE_ORIGIN } from "@openbot/contracts/invite-links";
 import type { CentralAuthUser } from "@openbot/contracts/ipc";
 import {
   isMobileConnectDevelopmentHost,
@@ -16,6 +15,7 @@ import * as Crypto from "expo-crypto";
 import * as Device from "expo-device";
 import * as SecureStore from "expo-secure-store";
 import { z } from "zod";
+import { DISABLED_ACCOUNT_API_URL, selfHostAccountApiUrl } from "@/self-host/config";
 import { isAndroid, isIOS } from "@/shared/lib/platform";
 import { currentText } from "@/shared/lib/text";
 import * as LockedKeychain from "../../../shared/lib/locked-keychain";
@@ -118,8 +118,8 @@ async function redeemMobileConnectSession(value: string): Promise<MobileSession>
 
 /** The account service for email sign-in. A development build can name a local one. */
 function mobileAccountApiUrl(): string {
-  const override = process.env.EXPO_PUBLIC_OPENBOT_API_URL;
-  return (override && __DEV__ && normalizeAccountApiUrl(override)) || OPENBOT_CONTROL_PLANE_ORIGIN;
+  // Self-hosted fork: the user's account service, never api.openbot.run (`src/self-host/config.ts`).
+  return selfHostAccountApiUrl() ?? DISABLED_ACCOUNT_API_URL;
 }
 
 export interface MobileEmailChallenge {

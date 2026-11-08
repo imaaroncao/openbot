@@ -1,3 +1,5 @@
+// Self-hosted fork: must stay first (blocks requests to the vendor).
+import "@/self-host/network-guard";
 import "../../global.css";
 
 import { QueryClientProvider } from "@tanstack/react-query";

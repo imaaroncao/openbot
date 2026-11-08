@@ -12,6 +12,7 @@ import {
   safeProperties,
 } from "@openbot/telemetry";
 import { indexedReportStorage } from "@openbot/telemetry/browser";
+import { vendorTelemetryEnabled } from "@openbot/telemetry/self-host";
 import { Effect } from "effect";
 import { version } from "../../../package.json";
 
@@ -42,6 +43,8 @@ export function configureDesktopReports(
   user: Pick<CentralAuthUser, "id" | "email"> | null,
 ): void {
   const capture = info.analyticsCaptureUrl;
+  // Self-hosted fork: no error reports to the vendor.
+  if (!vendorTelemetryEnabled) return;
   if (capture === undefined && (!import.meta.env.PROD || info.variant !== "production")) return;
   queue ??= new ReportQueue(
     indexedReportStorage("openbot-desktop-error-reports-v1"),

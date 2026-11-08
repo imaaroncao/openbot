@@ -1,0 +1,16 @@
+#cloud-config
+# Self-hosted fork: first boot of the Oracle Cloud VM (selfhost/server/oracle/create-instance.sh).
+# Oracle's Ubuntu images reject every port but 22 in iptables, even when the VCN security list
+# allows them. Open the ports of selfhost/server, and install Docker.
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+  - iptables-persistent
+runcmd:
+  - iptables -I INPUT 5 -p tcp -m multiport --dports 80,443,3478 -m state --state NEW -j ACCEPT
+  - iptables -I INPUT 5 -p udp --dport 3478 -j ACCEPT
+  - iptables -I INPUT 5 -p udp --dport 49160:49200 -j ACCEPT
+  - netfilter-persistent save
+  - curl -fsSL https://get.docker.com | sh
+  - usermod -aG docker ubuntu

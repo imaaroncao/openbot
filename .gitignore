@@ -67,3 +67,12 @@ keys
 
 # Persistent local development identity and migration recovery.
 .openbot/
+
+# Self-hosted fork: local secrets and build output.
+/selfhost/selfhost.env
+/selfhost/server/.env
+/selfhost/server/data/
+/selfhost/server/secrets/
+/selfhost/.build/
+/selfhost/*.log
+/selfhost/server/auth-api/bundle/

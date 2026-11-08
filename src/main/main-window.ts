@@ -67,6 +67,7 @@ import { createQuitShortcut, isQuitGuarded, type QuitShortcut } from "./quit-sho
 import type { RemoteServerManager } from "./remote-server-manager";
 import type { RemoteWorkflowError } from "./remote-service-effects";
 import { sendToRenderer } from "./renderer-ipc";
+import { openSelfHostServerWindow } from "./self-host/server-settings-window";
 import { isTrustedRendererUrl } from "./trusted-renderer";
 import type { UpdateService } from "./update-service";
 import { followAppearance, followWindowGlass, glassWindowOptions, windowBackgroundColor } from "./window-appearance";
@@ -1103,6 +1104,11 @@ export function configureApplicationMenu(
               if (!(candidate instanceof BrowserWindow)) return;
               sendToRenderer(candidate, IPC_ENDPOINTS.app.openSettings);
             },
+          },
+          {
+            // Self-hosted fork: the account service and Signal of this build.
+            label: "自托管服务器…",
+            click: () => openSelfHostServerWindow(getMainWindow()),
           },
           { type: "separator" },
           { role: "hide" },

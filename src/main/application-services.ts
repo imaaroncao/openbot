@@ -1,6 +1,7 @@
 import { isManagedRuntimeProvider, type ManagedProviderId } from "@openbot/contracts/agent-providers";
 import { ANALYTICS_GENERATIONS, openPanelTransport, ReportQueue } from "@openbot/telemetry";
 import { fileReportStorage } from "@openbot/telemetry/node";
+import { vendorTelemetryEnabled } from "@openbot/telemetry/self-host";
 import { makeWASocket } from "@openbot/whatsapp/baileys";
 import { makeOpenBotSignalRepository } from "@openbot/whatsapp/signal-repository";
 import { Effect, Fiber, Schema } from "effect";
@@ -1109,7 +1110,7 @@ export async function createApplicationServices({
   teardown.push(TEARDOWN_ORDER.agentDock, "the agent dock", () => agentDock.destroy());
   const centralAuthApiUrl = readCentralAuthApiUrl(
     process.env.OPENBOT_AUTH_API_URL,
-    app.isPackaged ? "https://api.openbot.run" : "http://127.0.0.1:3100",
+    "http://127.0.0.1:3100", // self-hosted fork: never fall back to api.openbot.run
   );
   const centralAuth = new CentralAuthManager({
     apiUrl: centralAuthApiUrl,
@@ -3120,7 +3121,9 @@ export async function createApplicationServices({
     throw new Error(`Unsupported analytics platform: ${analyticsPlatform}`);
   }
   performance.mark("openbot:services.remote-desktop");
-  const analyticsEnabled = (app.isPackaged && appVariant === "production") || analyticsCaptureUrl !== null;
+  // Self-hosted fork: no product analytics or error reports to the vendor, in any build.
+  const analyticsEnabled =
+    vendorTelemetryEnabled && ((app.isPackaged && appVariant === "production") || analyticsCaptureUrl !== null);
   const analyticsInstallId = analyticsEnabled
     ? await Effect.runPromise(
         readAnalyticsInstallId(join(app.getPath("userData"), ANALYTICS_INSTALL_ID_FILE), Date.now()),
