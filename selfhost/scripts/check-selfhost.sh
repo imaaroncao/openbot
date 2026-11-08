@@ -42,6 +42,7 @@ hook src/renderer/src/features/onboarding/onboarding-provider-rows.ts 'isSelfHos
 hook src/renderer/src/features/onboarding/FirstRunChoice.tsx 'isSelfHostRemovedProvider(FREE_PROVIDER)' "no free-models row"
 hook apps/mobile/src/features/servers/model/provider-admin.ts 'isSelfHostRemovedProvider(provider)' "phone hides removed providers"
 hook src/main/provider-runtime-releases.ts 'imaaroncao/openbot/main/provider-runtime-blocklist.json' "provider blocklist from the fork"
+hook apps/auth-api/src/server/smtp-email-delivery.ts 'Cloudflare Email Service SMTP' "SMTP username may be api_token (Cloudflare)"
 
 # A second `onBeforeRequest` on a session replaces the guard's listener.
 others="$(grep -rn 'webRequest.onBeforeRequest' src/main src/backend --include='*.ts' | grep -v '\.test\.' | grep -v 'src/main/self-host/')"

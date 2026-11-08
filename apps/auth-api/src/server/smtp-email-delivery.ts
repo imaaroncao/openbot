@@ -602,7 +602,10 @@ const writeCommand = Effect.fn("SmtpEmail.writeCommand")(
 function validateConfig(config: SmtpEmailConfig): void {
   if (!isValidHostname(config.host)) throw new Error("smtp_invalid_host");
   if (config.port !== 465) throw new Error("smtp_port_must_be_465");
-  validateEmail(config.username, "username");
+  // Self-hosted fork: the username is only an AUTH credential, and Cloudflare Email Service SMTP
+  // takes the literal `api_token`, which is not an email address.
+  if (!config.username || config.username.length > INPUT_LIMITS.email || /[\s\0]/u.test(config.username))
+    throw new Error("smtp_invalid_username");
   validateEmail(config.from, "sender");
   if (!config.password || hasHeaderBreak(config.password)) throw new Error("smtp_invalid_password");
 }
