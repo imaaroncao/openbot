@@ -7,6 +7,7 @@ import {
   type QuitGuard,
 } from "@openbot/contracts/ipc";
 import type { AppTextKey } from "@openbot/i18n";
+import { vendorTelemetryEnabled } from "@openbot/telemetry/self-host";
 import {
   Item,
   ItemActions,
@@ -312,17 +313,20 @@ export function SettingsGeneralTab(props: SettingsGeneralTabProps) {
         </ItemGroup>
       </SettingsSection>
 
-      <SettingsSection title={i18n.t("settings.permissions.title")}>
-        <ItemGroup class="settings-modal-card">
-          <SwitchField
-            data-settings-row="settings.analytics.title"
-            checked={props.value.productAnalytics}
-            onChange={(checked) => props.onUpdateSetting("productAnalytics", checked)}
-            label={i18n.t("settings.analytics.title")}
-            description={i18n.t("settings.analytics.description")}
-          />
-        </ItemGroup>
-      </SettingsSection>
+      {/* Self-hosted fork: no product analytics are sent, so the switch is not shown. */}
+      <Show when={vendorTelemetryEnabled}>
+        <SettingsSection title={i18n.t("settings.permissions.title")}>
+          <ItemGroup class="settings-modal-card">
+            <SwitchField
+              data-settings-row="settings.analytics.title"
+              checked={props.value.productAnalytics}
+              onChange={(checked) => props.onUpdateSetting("productAnalytics", checked)}
+              label={i18n.t("settings.analytics.title")}
+              description={i18n.t("settings.analytics.description")}
+            />
+          </ItemGroup>
+        </SettingsSection>
+      </Show>
     </>
   );
 }

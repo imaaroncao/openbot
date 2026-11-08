@@ -1,3 +1,4 @@
+import { vendorTelemetryEnabled } from "@openbot/telemetry/self-host";
 import { router } from "expo-router";
 import { Typography } from "heroui-native";
 import Bell from "lucide-react-native/icons/bell";
@@ -60,9 +61,12 @@ export function SettingsScreen() {
         <SettingsRow leading={<RowIcon icon={Bell} />} onPress={() => router.push("/settings/notifications")}>
           <Typography.Paragraph>{t("mobile.settings.notifications.title")}</Typography.Paragraph>
         </SettingsRow>
-        <SettingsRow leading={<RowIcon icon={Shield} />} onPress={() => router.push("/settings/privacy")}>
-          <Typography.Paragraph>{t("mobile.settings.privacy.title")}</Typography.Paragraph>
-        </SettingsRow>
+        {/* Self-hosted fork: no product analytics are sent, so the Privacy screen (one switch) is not shown. */}
+        {vendorTelemetryEnabled ? (
+          <SettingsRow leading={<RowIcon icon={Shield} />} onPress={() => router.push("/settings/privacy")}>
+            <Typography.Paragraph>{t("mobile.settings.privacy.title")}</Typography.Paragraph>
+          </SettingsRow>
+        ) : null}
         <SettingsRow leading={<RowIcon icon={Lock} />} onPress={() => router.push("/settings/app-lock")}>
           <Typography.Paragraph>{t("mobile.appLock.title")}</Typography.Paragraph>
         </SettingsRow>

@@ -1,5 +1,6 @@
 import { ProviderLogo, type ProviderLogoVariant } from "@openbot/brand";
 import { isSelfHostRemovedProvider } from "@openbot/contracts/self-host-providers";
+import { vendorTelemetryEnabled } from "@openbot/telemetry/self-host";
 import { Button, ChevronRight, Spinner } from "@openbot/ui";
 import { AgentAvatar } from "@openbot/ui/features/agents/AgentAvatar";
 import { useText } from "@openbot/ui/text";
@@ -107,12 +108,15 @@ export function FirstRunChoice(props: FirstRunChoiceProps) {
           </span>
           <ChevronRight class="first-run-choice-row-chevron" aria-hidden="true" />
         </Button>
-        <AnalyticsConsentRow
-          checked={props.analytics}
-          disabled={props.disabled}
-          agents={props.team.slice(2, 5)}
-          onChange={(enabled) => props.onAnalyticsChange(enabled)}
-        />
+        {/* Self-hosted fork: no product analytics are sent, so the opt-in is not shown. */}
+        <Show when={vendorTelemetryEnabled}>
+          <AnalyticsConsentRow
+            checked={props.analytics}
+            disabled={props.disabled}
+            agents={props.team.slice(2, 5)}
+            onChange={(enabled) => props.onAnalyticsChange(enabled)}
+          />
+        </Show>
       </div>
       <ConsentNotice onOpenTerms={() => props.onOpenTerms()} onOpenPrivacy={() => props.onOpenPrivacy()} />
       <Show when={props.reason}>

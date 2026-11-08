@@ -1,5 +1,6 @@
 import type { AppInfo } from "@openbot/contracts/ipc";
 import type { AppTextKey } from "@openbot/i18n";
+import { vendorTelemetryEnabled } from "@openbot/telemetry/self-host";
 import {
   Bell,
   Bot,
@@ -85,7 +86,10 @@ export const navItems: ReadonlyArray<SettingsNavItem> = [
       { titleKey: "settings.keepAwakeOnBattery.title", descriptionKey: "settings.keepAwakeOnBattery.description" },
       { titleKey: "settings.restoreWorkspace.title", descriptionKey: "settings.restoreWorkspace.description" },
       { titleKey: "settings.quitGuard.title", descriptionKey: "settings.quitGuard.description", macOS: true },
-      { titleKey: "settings.analytics.title", descriptionKey: "settings.analytics.description" },
+      // Self-hosted fork: the analytics switch is shown only when vendor telemetry exists.
+      ...(vendorTelemetryEnabled
+        ? [{ titleKey: "settings.analytics.title", descriptionKey: "settings.analytics.description" } as const]
+        : []),
     ],
   },
   {

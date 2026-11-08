@@ -1,10 +1,11 @@
 /**
  * Self-hosted fork: imported first by `src/app/_layout.tsx`.
  *
- * Refuses JavaScript requests (fetch and XMLHttpRequest) to the vendor's services, so an
+ * Refuses JavaScript requests (global fetch, XMLHttpRequest, WebSocket, and `expo/fetch` through
+ * `guardVendorFetch` in `features/support/model/logged-fetch.ts`) to the vendor's services, so an
  * analytics or update call that a future upstream merge adds cannot leave the phone. The user's
  * own account service and Signal are never on these hosts. Native over-the-air updates are off in
- * `app.config.js`.
+ * `app.config.js`. `selfhost/scripts/check-selfhost.sh` fails when another file imports `expo/fetch`.
  */
 
 const BLOCKED_HOST_SUFFIXES = ["openbot.run", "openpanel.dev", "expo.dev", "exp.host"];
@@ -40,6 +41,16 @@ function requestUrl(input: unknown): string {
   return "";
 }
 
+const BLOCKED_MESSAGE = "Network request failed: blocked by the self-hosted build";
+
+/** Wraps a fetch implementation (such as `expo/fetch`) so that it refuses the vendor's URLs. */
+export function guardVendorFetch<I, N, R>(
+  fetchImpl: (input: I, init?: N) => Promise<R>,
+): (input: I, init?: N) => Promise<R> {
+  return (input, init) =>
+    isBlockedVendorUrl(requestUrl(input)) ? Promise.reject(new TypeError(BLOCKED_MESSAGE)) : fetchImpl(input, init);
+}
+
 declare global {
   // eslint-disable-next-line no-var
   var __openbotSelfHostGuard: boolean | undefined;
@@ -50,11 +61,18 @@ if (!globalThis.__openbotSelfHostGuard) {
 
   const originalFetch = globalThis.fetch;
   if (typeof originalFetch === "function") {
-    const guardedFetch: typeof fetch = (input, init) =>
-      isBlockedVendorUrl(requestUrl(input))
-        ? Promise.reject(new TypeError("Network request failed: blocked by the self-hosted build"))
-        : originalFetch(input, init);
-    globalThis.fetch = Object.assign(guardedFetch, originalFetch);
+    globalThis.fetch = Object.assign(guardVendorFetch(originalFetch), originalFetch);
+  }
+
+  const OriginalWebSocket = globalThis.WebSocket;
+  if (typeof OriginalWebSocket === "function") {
+    globalThis.WebSocket = new Proxy(OriginalWebSocket, {
+      construct(target, args, newTarget) {
+        const url = requestUrl(args[0]);
+        const guardedArgs = isBlockedVendorUrl(url) ? ["ws://127.0.0.1:9/blocked", ...args.slice(1)] : args;
+        return Reflect.construct(target, guardedArgs, newTarget);
+      },
+    });
   }
 
   const xhr = globalThis.XMLHttpRequest?.prototype;

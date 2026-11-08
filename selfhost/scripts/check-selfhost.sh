@@ -42,6 +42,17 @@ hook src/renderer/src/features/onboarding/onboarding-provider-rows.ts 'isSelfHos
 hook src/renderer/src/features/onboarding/FirstRunChoice.tsx 'isSelfHostRemovedProvider(FREE_PROVIDER)' "no free-models row"
 hook apps/mobile/src/features/servers/model/provider-admin.ts 'isSelfHostRemovedProvider(provider)' "phone hides removed providers"
 hook src/main/provider-runtime-releases.ts 'imaaroncao/openbot/main/provider-runtime-blocklist.json' "provider blocklist from the fork"
+hook src/renderer/src/features/onboarding/FirstRunChoice.tsx '<Show when={vendorTelemetryEnabled}>' "no analytics opt-in (desktop setup)"
+hook src/renderer/src/features/web-client/WebApp.tsx 'vendorTelemetryEnabled && !analyticsAgreed()' "no analytics opt-in (web sign-in)"
+hook src/renderer/src/features/settings/SettingsGeneralTab.tsx '<Show when={vendorTelemetryEnabled}>' "no analytics switch (desktop settings)"
+hook src/renderer/src/features/web-client/WebAccountSettings.tsx '<Show when={vendorTelemetryEnabled}>' "no analytics switch (web settings)"
+hook apps/mobile/src/features/settings/screens/settings-screen.tsx '{vendorTelemetryEnabled ? (' "no Privacy analytics screen (phone)"
+hook apps/mobile/src/features/support/model/logged-fetch.ts 'withRequestLog(guardVendorFetch(expoFetch))' "phone expo/fetch guard"
+# `expo/fetch` is native and skips the global guard: only the guarded wrapper may import it.
+for file in $(grep -rlE "from [\"']expo/fetch[\"']" apps/mobile/src packages 2>/dev/null | grep -v node_modules); do
+  [[ "$file" == apps/mobile/src/features/support/model/logged-fetch.ts ]] && continue
+  echo "✗ $file imports expo/fetch directly: use features/support/model/logged-fetch.ts (it blocks the vendor)"; status=1
+done
 hook apps/auth-api/src/server/smtp-email-delivery.ts 'Cloudflare Email Service SMTP' "SMTP username may be api_token (Cloudflare)"
 
 # A second `onBeforeRequest` on a session replaces the guard's listener.

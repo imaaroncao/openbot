@@ -15,6 +15,7 @@ import { formatLocale, resolveLocale } from "@openbot/i18n";
 import { sourceText } from "@openbot/i18n/source";
 import { markRemoteSync } from "@openbot/team-client/sync-profile";
 import { classifyFailure } from "@openbot/telemetry";
+import { vendorTelemetryEnabled } from "@openbot/telemetry/self-host";
 import { NotificationObserver, Toaster, toast } from "@openbot/ui";
 import { AccountLogin } from "@openbot/ui/features/account/AccountLogin";
 import { AppLoadingScreen } from "@openbot/ui/features/account/AppLoadingScreen";
@@ -542,7 +543,8 @@ export function WebApp(props: { createRuntime?: WebRuntimeFactory } = {}) {
                     });
                   }}
                   consent={
-                    <Show when={!analyticsAgreed()}>
+                    // Self-hosted fork: no product analytics are sent, so the opt-in is not shown.
+                    <Show when={vendorTelemetryEnabled && !analyticsAgreed()}>
                       <AnalyticsConsentRow
                         class="web-consent-row"
                         checked={analyticsChoice()}

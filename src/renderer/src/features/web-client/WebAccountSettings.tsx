@@ -2,6 +2,7 @@ import { type AppAppearance, isAppAppearance } from "@openbot/contracts/app-appe
 import type { AppLanguage } from "@openbot/contracts/app-language";
 import type { AvatarColor, CentralAuthUser } from "@openbot/contracts/ipc";
 import type { AppTextKey } from "@openbot/i18n";
+import { vendorTelemetryEnabled } from "@openbot/telemetry/self-host";
 import {
   Button,
   CreditCard,
@@ -29,7 +30,7 @@ import { SettingsProfileTab } from "@openbot/ui/features/settings/SettingsProfil
 import { SoundChoiceSelect } from "@openbot/ui/features/settings/SoundChoiceSelect";
 import { createSettingsProfileStore } from "@openbot/ui/features/settings/stores/profile-store";
 import { useText } from "@openbot/ui/text";
-import { createEffect, createSignal, onCleanup } from "solid-js";
+import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 import { readActionSoundChoice, setActionSoundChoice } from "../../action-sounds";
 import { setShowAgentSteps, useShowAgentSteps } from "../../agent-steps-preference";
 import { setCompactMessageActions, useCompactMessageActions } from "../../compact-message-actions-preference";
@@ -263,21 +264,24 @@ export default function WebAccountSettings(props: WebAccountSettingsProps) {
               </Item>
             </ItemGroup>
           </SettingsSection>
-          <SettingsSection title={t("settings.analytics.title")}>
-            <ItemGroup class="settings-modal-card">
-              <SwitchField
-                checked={reportsEnabled()}
-                onChange={(value) => {
-                  setReportsEnabled(setWebAnalyticsEnabled(value));
-                  sendWebAnalyticsChoice(props.calls)
-                    .then(() => setReportsEnabled(webReportsEnabled()))
-                    .catch(() => undefined);
-                }}
-                label={t("settings.analytics.title")}
-                description={t("settings.analytics.webDescription")}
-              />
-            </ItemGroup>
-          </SettingsSection>
+          {/* Self-hosted fork: no product analytics are sent, so the switch is not shown. */}
+          <Show when={vendorTelemetryEnabled}>
+            <SettingsSection title={t("settings.analytics.title")}>
+              <ItemGroup class="settings-modal-card">
+                <SwitchField
+                  checked={reportsEnabled()}
+                  onChange={(value) => {
+                    setReportsEnabled(setWebAnalyticsEnabled(value));
+                    sendWebAnalyticsChoice(props.calls)
+                      .then(() => setReportsEnabled(webReportsEnabled()))
+                      .catch(() => undefined);
+                  }}
+                  label={t("settings.analytics.title")}
+                  description={t("settings.analytics.webDescription")}
+                />
+              </ItemGroup>
+            </SettingsSection>
+          </Show>
           <SettingsSection
             title={
               <NotificationScopeTitle
