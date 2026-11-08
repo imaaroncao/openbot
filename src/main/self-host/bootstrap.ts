@@ -9,7 +9,7 @@
 
 import { resolve } from "node:path";
 import { app } from "electron";
-import { DISABLED_AUTH_API_URL, resolveSelfHostConfig } from "./config";
+import { DISABLED_AUTH_API_URL, readBundledGitHubApp, resolveSelfHostConfig } from "./config";
 import { installVendorNetworkGuard } from "./network-guard";
 
 function userDataDirectory(): string {
@@ -31,6 +31,16 @@ if (resolved.config) {
   // No server yet: keep the app local. Without this, upstream falls back to https://api.openbot.run.
   process.env.OPENBOT_AUTH_API_URL = DISABLED_AUTH_API_URL;
   delete process.env.OPENBOT_REMOTE_SIGNAL_URL;
+}
+
+// The user's own GitHub App (selfhost/scripts/create-github-app.sh). Without one, the GitHub
+// connection is not offered: src/main/github-connector-config.ts has no vendor fallback.
+if (!process.env.OPENBOT_GITHUB_CLIENT_ID?.trim()) {
+  const githubApp = readBundledGitHubApp(app.isPackaged ? process.resourcesPath : undefined);
+  if (githubApp) {
+    process.env.OPENBOT_GITHUB_CLIENT_ID = githubApp.clientId;
+    process.env.OPENBOT_GITHUB_APP_SLUG = githubApp.slug;
+  }
 }
 
 const ownOrigins: string[] = [];

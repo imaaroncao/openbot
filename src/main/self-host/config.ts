@@ -129,6 +129,31 @@ export function readBundledSelfHostConfig(resourcesPath: string | undefined): Se
   return path ? readConfigFile(path) : null;
 }
 
+/**
+ * The user's own GitHub App for the built-in GitHub connection, from the bundled self-host.json
+ * (`githubClientId`, `githubAppSlug`, written by selfhost/desktop/build-dmg.sh). It is not part of
+ * the server choice in the menu: it is fixed when the app is built.
+ */
+export interface SelfHostGitHubApp {
+  clientId: string;
+  slug: string;
+}
+
+export function readBundledGitHubApp(resourcesPath: string | undefined): SelfHostGitHubApp | null {
+  const path = bundledConfigPath(resourcesPath);
+  try {
+    if (!path || !existsSync(path)) return null;
+    const value = JSON.parse(readFileSync(path, "utf8"));
+    if (!isDynamicRecord(value)) return null;
+    const { githubClientId: clientId, githubAppSlug: slug } = value;
+    if (typeof clientId !== "string" || !/^[A-Za-z0-9.]+$/u.test(clientId)) return null;
+    if (typeof slug !== "string" || !/^[a-z0-9-]+$/u.test(slug)) return null;
+    return { clientId, slug };
+  } catch {
+    return null;
+  }
+}
+
 /** Writes the user's choice atomically. `null` removes it, so the bundled default applies again. */
 export function writeUserSelfHostConfig(userDataDirectory: string, config: SelfHostConfig | null): void {
   const path = userConfigPath(userDataDirectory);

@@ -19,6 +19,9 @@ services:
       OPENBOT_AUTH_API_URL: https://${API_DOMAIN:?API_DOMAIN is required}
       OPENBOT_REMOTE_SIGNAL_URL: wss://${SIGNAL_DOMAIN:?SIGNAL_DOMAIN is required}/v1/signal
       OPENBOT_DISPLAY_SIZE: ${OPENBOT_DISPLAY_SIZE:-1280x800}
+      # Your own GitHub App (selfhost/scripts/create-github-app.sh). Empty: no GitHub connection.
+      OPENBOT_GITHUB_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:-}
+      OPENBOT_GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
     volumes:
       - openbot-data:/data
     # A fixed address: the TURN server (scripts/deploy.sh) relays to this one private address only.

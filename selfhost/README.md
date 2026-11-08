@@ -131,6 +131,28 @@ docker compose exec openbot openbot status
 docker compose logs -f openbot
 ```
 
+### 可选：自己的 GitHub App（内置 GitHub 连接）
+
+官方的 GitHub 连接使用 nightly-labs 的 GitHub App "OpenBotGit"：安装到仓库后，GitHub 会把 issue、PR、评论等事件发到 `signal.openbot.run`，而且这个 App 的私钥在官方手里。本分支不再使用它，没有自己的 App 时不显示 GitHub 连接。创建自己的 App：
+
+```sh
+selfhost/scripts/create-github-app.sh "OpenBot 你的名字"
+```
+
+1. 浏览器打开 GitHub，点 **Create GitHub App**。这个 App 是私有的，只能装在你自己的账号上；事件发到你的 `signal.你的域名`。
+2. 在 App 设置 → General 勾选 **Enable Device Flow** 并保存（模板不能设置这一项）。可选：Optional features 里关闭 User-to-server token expiration。
+3. 脚本把 Client ID、私钥、Webhook 密钥写进 `selfhost/server/.env` 和 `selfhost/selfhost.env`（不打印，git 不跟踪）。然后执行 `deploy.sh <VPS> --rebuild-auth-api`、`deploy-host.sh`，再重新打包桌面端。
+
+### 连接器和官方的关系
+
+| 连接器 | 数据走向 |
+| --- | --- |
+| GitHub（内置） | 只用你自己的 App：VPS/电脑 ↔ GitHub，事件 → 你的 Signal，安装令牌由你的账号服务签发 |
+| 应用市场里的 MCP 应用（Cloudflare、Stripe、Higgsfield 等） | 电脑/VPS 直接连第三方；OAuth 回调到本机地址或 `openbot://`。客户端说明文件由你的账号服务提供（`/oauth/mcp-client.json`） |
+| Mercury | 不在内置列表：应用市场 → **Add custom**，地址 `https://mcp.mercury.com/mcp`，用浏览器登录 |
+| Gmail / Google Drive | 不在内置列表。Google 官方 MCP（`gmailmcp.googleapis.com`、`drivemcp.googleapis.com`，预览版）需要你在 Google Cloud 建自己的 OAuth 客户端；或者用 Composio（第三方中转） |
+| Slack / Discord / Telegram | 需要官方机器人，自托管版不可用 |
+
 ---
 
 ## 2. 桌面端 DMG

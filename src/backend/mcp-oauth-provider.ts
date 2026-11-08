@@ -67,7 +67,19 @@ import { withTimeout } from "./with-timeout";
  * must hold every address that `redirectUrl` can be for this document. The `localhost` form comes
  * only from an RFC 7591 registration, never from this document.
  */
-const MCP_CLIENT_METADATA_URL = "https://openbot.run/oauth/mcp-client.json";
+// Self-hosted fork: the user's own account service serves the document (apps/auth-api), so the
+// vendor's site is not in the sign-in. The vendor's URL only when no HTTPS account service is set.
+const MCP_CLIENT_METADATA_URL = selfHostClientMetadataUrl(process.env.OPENBOT_AUTH_API_URL);
+
+function selfHostClientMetadataUrl(authApiUrl: string | undefined): string {
+  try {
+    const url = new URL(authApiUrl ?? "");
+    if (url.protocol === "https:") return `${url.origin}/oauth/mcp-client.json`;
+  } catch {
+    // No account service: the upstream document.
+  }
+  return "https://openbot.run/oauth/mcp-client.json";
+}
 
 /** What one server's sign-in leaves behind, and all of it: nothing else is kept between runs. */
 export const mcpOAuthRecordSchema = z.object({

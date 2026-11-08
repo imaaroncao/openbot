@@ -28,7 +28,8 @@ scp -q "$DIR/host/compose.yaml" "$TARGET:/tmp/openbot-host-compose.yaml"
   $SUDO mkdir -p /opt/openbot-host
   $SUDO mv /tmp/openbot-host-compose.yaml /opt/openbot-host/compose.yaml
   test -f /opt/openbot-host/seccomp.json || { echo 'Run scripts/build-linux-host.sh first.' >&2; exit 1; }
-  printf 'API_DOMAIN=%s\nSIGNAL_DOMAIN=%s\n' '$API_DOMAIN' '$SIGNAL_DOMAIN' | $SUDO tee /opt/openbot-host/.env >/dev/null
+  printf 'API_DOMAIN=%s\nSIGNAL_DOMAIN=%s\nGITHUB_APP_CLIENT_ID=%s\nGITHUB_APP_SLUG=%s\n' \
+    '$API_DOMAIN' '$SIGNAL_DOMAIN' '${GITHUB_APP_CLIENT_ID:-}' '${GITHUB_APP_SLUG:-}' | $SUDO tee /opt/openbot-host/.env >/dev/null
   cd /opt/openbot-host && $SUDO docker compose up -d
   for i in \$(seq 1 60); do
     $SUDO docker compose exec -T openbot openbot status >/dev/null 2>&1 && break

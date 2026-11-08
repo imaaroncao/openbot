@@ -25,7 +25,9 @@ import { z } from "zod";
 const logger = createOpenBotLogger("create-github-app");
 /** GitHub accepts the code for one hour. The script waits for less. */
 const WAIT_MS = 30 * 60_000;
-const MANIFEST_PATH = resolve(import.meta.dirname, "github-app/manifest.json");
+// Self-hosted fork: selfhost/scripts/create-github-app.sh passes its own manifest.
+const MANIFEST_PATH =
+  process.env.OPENBOT_GITHUB_APP_MANIFEST?.trim() || resolve(import.meta.dirname, "github-app/manifest.json");
 
 /** The fields that this script checks. GitHub reads the rest of the manifest as it is. */
 const manifestSchema = z.looseObject({ name: z.string().min(1), url: z.string().url() });

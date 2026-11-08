@@ -43,11 +43,16 @@ echo "  bundle id       : ${DESKTOP_BUNDLE_ID}"
 
 # 1. The default servers, baked into Resources/self-host.json.
 mkdir -p selfhost/.build
-SELFHOST_AUTH_API_URL="${SELFHOST_AUTH_API_URL:-}" SELFHOST_SIGNAL_URL="${SELFHOST_SIGNAL_URL:-}" node -e '
+SELFHOST_AUTH_API_URL="${SELFHOST_AUTH_API_URL:-}" SELFHOST_SIGNAL_URL="${SELFHOST_SIGNAL_URL:-}" \
+SELFHOST_GITHUB_CLIENT_ID="${SELFHOST_GITHUB_CLIENT_ID:-}" SELFHOST_GITHUB_APP_SLUG="${SELFHOST_GITHUB_APP_SLUG:-}" node -e '
   const api = process.env.SELFHOST_AUTH_API_URL, signal = process.env.SELFHOST_SIGNAL_URL;
   const example = (value) => !value || /(^|\.)example\.com$/u.test(new URL(value).hostname);
   const config = example(api) || example(signal) ? {} : { authApiUrl: new URL(api).origin, signalUrl: signal };
   if (!config.authApiUrl) console.log("  (no server baked in: set it later in OpenBot → 自托管服务器…)");
+  // Your own GitHub App (selfhost/scripts/create-github-app.sh); without it, no GitHub connection.
+  const githubClientId = process.env.SELFHOST_GITHUB_CLIENT_ID, githubAppSlug = process.env.SELFHOST_GITHUB_APP_SLUG;
+  if (githubClientId && githubAppSlug) Object.assign(config, { githubClientId, githubAppSlug });
+  console.log(`  github app      : ${githubAppSlug || "<none: no GitHub connection>"}`);
   require("node:fs").writeFileSync("selfhost/.build/self-host.json", JSON.stringify(config, null, 2) + "\n");
 '
 

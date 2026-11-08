@@ -71,9 +71,10 @@ services:
       TURN_HOST: ${TURN_DOMAIN:-${SIGNAL_DOMAIN}}
       TURN_PORT: 3478
       TURN_TLS_PORT: 5349
-      # Slack, GitHub, Discord and Telegram relays need the vendor's apps; they stay off.
+      # Slack, Discord and Telegram relays need the vendor's apps; they stay off. GitHub uses your
+      # own app (selfhost/scripts/create-github-app.sh writes its webhook secret to .env).
       SLACK_SIGNING_SECRET: ""
-      GITHUB_WEBHOOK_SECRET: ""
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
       DISCORD_BOT_TOKEN: ""
       DISCORD_APPLICATION_ID: ""
       TELEGRAM_BOT_TOKENS: ""

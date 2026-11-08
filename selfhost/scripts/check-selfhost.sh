@@ -53,6 +53,11 @@ for file in $(grep -rlE "from [\"']expo/fetch[\"']" apps/mobile/src packages 2>/
   [[ "$file" == apps/mobile/src/features/support/model/logged-fetch.ts ]] && continue
   echo "✗ $file imports expo/fetch directly: use features/support/model/logged-fetch.ts (it blocks the vendor)"; status=1
 done
+hook src/main/github-connector-config.ts 'const GITHUB_APP_CLIENT_ID = "";' "no vendor GitHub App (OpenBotGit)"
+hook src/main/self-host/bootstrap.ts 'readBundledGitHubApp(' "own GitHub App from self-host.json"
+hook scripts/create-github-app.ts 'OPENBOT_GITHUB_APP_MANIFEST' "own GitHub App manifest"
+hook src/backend/mcp-oauth-provider.ts 'selfHostClientMetadataUrl(process.env.OPENBOT_AUTH_API_URL)' "MCP client document on the own server"
+hook "apps/auth-api/src/routes/oauth/mcp-client[.]json.ts" 'client_id: `${origin}/oauth/mcp-client.json`' "MCP client document names its own server"
 hook apps/auth-api/src/server/smtp-email-delivery.ts 'Cloudflare Email Service SMTP' "SMTP username may be api_token (Cloudflare)"
 
 # A second `onBeforeRequest` on a session replaces the guard's listener.
