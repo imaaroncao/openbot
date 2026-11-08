@@ -93,6 +93,7 @@ import {
 } from "@openbot/team-client/team-admin-requests";
 import { clearAgentContext, type TeamApiRequest } from "@openbot/team-client/team-api-requests";
 import { classifyFailure } from "@openbot/telemetry";
+import { vendorPromotionsEnabled } from "@openbot/telemetry/self-host";
 import { hasVisibleToasts, toast } from "@openbot/ui";
 import type { AgentMessage } from "@openbot/ui/data";
 import { accountUsageProviderRows } from "@openbot/ui/features/account/account-usage-view";
@@ -2299,7 +2300,8 @@ function WebWorkspaceFrame(props: WebWorkspaceProps) {
                     onOpenSearch={() => setSearchOpen(true)}
                     onOpenMarketplace={openMarketplace}
                     footer={
-                      <Show when={!communityCard.dismissed()}>
+                      // Self-hosted fork: no vendor promotion cards (vendorPromotionsEnabled).
+                      <Show when={vendorPromotionsEnabled && !communityCard.dismissed()}>
                         <SidebarCommunityCard
                           onJoinDiscord={() => void openWebDestination("discord")}
                           onFollowX={() => void openWebDestination("x")}

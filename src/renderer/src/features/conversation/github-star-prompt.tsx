@@ -1,3 +1,4 @@
+import { vendorPromotionsEnabled } from "@openbot/telemetry/self-host";
 import { toast } from "@openbot/ui";
 import { GitHubStarToast } from "@openbot/ui/features/github-star/GitHubStarToast";
 import { createSignal } from "solid-js";
@@ -21,6 +22,8 @@ export function githubStarPromptShownThisSession(): boolean {
  * Blocked storage counts nothing, so a user never gets the question on each start.
  */
 export function noteAgentMessageSent(): void {
+  // Self-hosted fork: no vendor promotion prompts.
+  if (!vendorPromotionsEnabled) return;
   let sent: number;
   try {
     const saved = window.localStorage.getItem(STORAGE_KEY);

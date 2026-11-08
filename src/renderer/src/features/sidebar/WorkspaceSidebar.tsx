@@ -1,5 +1,6 @@
 import { type ChatWindowTarget, canAdministerServer } from "@openbot/contracts/ipc";
 import { AGENT_HIDDEN_CAPABILITY } from "@openbot/contracts/team-protocol/current";
+import { vendorPromotionsEnabled } from "@openbot/telemetry/self-host";
 import { Sidebar } from "@openbot/ui/features/sidebar/Sidebar";
 import { SidebarCommunityCard } from "@openbot/ui/features/sidebar/SidebarCommunityCard";
 import { SidebarMachineCard } from "@openbot/ui/features/sidebar/SidebarMachineCard";
@@ -353,7 +354,8 @@ export function WorkspaceSidebar(props: { peopleEnabled: boolean }) {
                 />
               )}
             </Show>
-            <Show when={!platform.landingPreview && !footerCard() && !mobileAppDismissed()}>
+            {/* Self-hosted fork: no vendor promotion cards (vendorPromotionsEnabled). */}
+            <Show when={vendorPromotionsEnabled && !platform.landingPreview && !footerCard() && !mobileAppDismissed()}>
               <SidebarMobileAppCard
                 onOpenInstall={() => openAppSettings(null, "mobile-connect")}
                 onDismiss={() => {
@@ -363,7 +365,13 @@ export function WorkspaceSidebar(props: { peopleEnabled: boolean }) {
               />
             </Show>
             <Show
-              when={!platform.landingPreview && !footerCard() && mobileAppDismissed() && !communityCard.dismissed()}
+              when={
+                vendorPromotionsEnabled &&
+                !platform.landingPreview &&
+                !footerCard() &&
+                mobileAppDismissed() &&
+                !communityCard.dismissed()
+              }
             >
               <SidebarCommunityCard
                 onJoinDiscord={() => void appPort().openExternal("discord")}

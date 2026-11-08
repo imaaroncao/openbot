@@ -6,3 +6,10 @@
  * typed `boolean`, not `false`, so the guarded upstream code still type-checks unchanged.
  */
 export const vendorTelemetryEnabled: boolean = false;
+
+/**
+ * Self-hosted fork: the switch for the vendor's promotion prompts in the desktop app: the
+ * "Enjoying OpenBot? Tell a friend" toast, the GitHub star toast, and the sidebar cards for the
+ * mobile app and the Discord/X community. Typed `boolean` for the same reason.
+ */
+export const vendorPromotionsEnabled: boolean = false;

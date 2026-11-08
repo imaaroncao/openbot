@@ -58,6 +58,11 @@ hook src/main/self-host/bootstrap.ts 'readBundledGitHubApp(' "own GitHub App fro
 hook scripts/create-github-app.ts 'OPENBOT_GITHUB_APP_MANIFEST' "own GitHub App manifest"
 hook src/backend/mcp-oauth-provider.ts 'selfHostClientMetadataUrl(process.env.OPENBOT_AUTH_API_URL)' "MCP client document on the own server"
 hook "apps/auth-api/src/routes/oauth/mcp-client[.]json.ts" 'client_id: `${origin}/oauth/mcp-client.json`' "MCP client document names its own server"
+hook packages/telemetry/src/self-host.ts 'export const vendorPromotionsEnabled: boolean = false;' "promotion switch off"
+hook src/renderer/src/features/conversation/social-follow-prompt.tsx 'if (!vendorPromotionsEnabled) return;' "no 'Tell a friend' toast"
+hook src/renderer/src/features/conversation/github-star-prompt.tsx 'if (!vendorPromotionsEnabled) return;' "no GitHub star toast"
+hook src/renderer/src/features/sidebar/WorkspaceSidebar.tsx 'vendorPromotionsEnabled &&' "no mobile-app/community sidebar cards"
+hook src/renderer/src/features/web-client/WebWorkspace.tsx 'vendorPromotionsEnabled && !communityCard.dismissed()' "no community card (web)"
 hook apps/auth-api/src/server/smtp-email-delivery.ts 'Cloudflare Email Service SMTP' "SMTP username may be api_token (Cloudflare)"
 
 # A second `onBeforeRequest` on a session replaces the guard's listener.

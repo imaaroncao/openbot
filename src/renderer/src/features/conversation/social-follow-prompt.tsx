@@ -1,4 +1,5 @@
 import type { SentMessageStats } from "@openbot/contracts/ipc";
+import { vendorPromotionsEnabled } from "@openbot/telemetry/self-host";
 import { dialogOpen, toast } from "@openbot/ui";
 import { type SocialFollowStep, SocialFollowToast } from "@openbot/ui/features/social-follow/SocialFollowToast";
 import type { SocialNetwork, SocialNetworkId } from "@openbot/ui/features/social-follow/social-networks";
@@ -132,6 +133,8 @@ export function noteSocialFollowMessageSent(): void {
  * over an open dialog.
  */
 export function noteSocialFollowReplyCompleted(): void {
+  // Self-hosted fork: no vendor promotion prompts.
+  if (!vendorPromotionsEnabled) return;
   if (!sentThisSession || checking || blocked()) return;
   let state: SocialFollowState;
   try {
