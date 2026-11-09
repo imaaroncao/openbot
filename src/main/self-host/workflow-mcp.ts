@@ -3,7 +3,8 @@
  * Mac, builds and runs the workflows of this OpenBot host with the same tools that its agents use
  * (`src/backend/workflows/workflow-tools.ts`), so a new upstream tool or rule reaches it unchanged. It
  * also creates and changes the agents that the steps use, with the checks of the agents' own
- * create_agent and update_profile (`src/backend/agent/model-tools.ts`):
+ * create_agent and update_profile (`src/backend/agent/model-tools.ts`), and answers an approval step,
+ * with a note to an agent's chat first when the person gives one:
  *
  *   MCP client -> `ssh openbotmcp@<VPS>` (a key that runs only connect.sh) -> connect.sh on the VPS
  *   -> 172.31.250.10:47778 in the host container (the token first) -> this server
@@ -26,6 +27,7 @@ import { join } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, type CallToolResult, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { INPUT_LIMITS } from "@openbot/contracts/input-limits";
 import type { CreateAgentInput } from "@openbot/contracts/ipc";
 import { createOpenBotLogger, redactText } from "@openbot/logging";
 import { Effect } from "effect";
@@ -45,6 +47,7 @@ import {
   WORKFLOW_TOOL_DEFINITIONS,
   type WorkflowTools,
 } from "../../backend/workflows/workflow-tools";
+import type { WorkflowsHandle } from "../../backend/workflows/workflows";
 
 const logger = createOpenBotLogger("workflow-mcp");
 
@@ -56,7 +59,7 @@ const TOKEN_WAIT_MS = 10_000;
 
 /** What the server reads from the running app. */
 export interface WorkflowMcpSources {
-  workflows: () => WorkflowTools;
+  workflows: () => WorkflowTools & Pick<WorkflowsHandle, "decide">;
   agents: AgentService;
 }
 
@@ -89,6 +92,20 @@ const UPDATE_AGENT_SCHEMA = updateProfileToolSchema.pick({
   reasoningEffort: true,
 });
 
+const identifier = z.string().trim().min(1).max(INPUT_LIMITS.identifier);
+
+const SEND_AGENT_MESSAGE_SCHEMA = z.strictObject({
+  agentId: identifier.describe("Stable id from list_agents."),
+  text: z.string().trim().min(1).max(INPUT_LIMITS.messageText),
+});
+
+const DECIDE_STEP_SCHEMA = z.strictObject({
+  workflowId: identifier,
+  nodeId: identifier.describe("The node of the step whose status is approval in read_workflow_runs."),
+  approved: z.boolean().describe("true approves the step. false rejects it, and that stops the whole run."),
+  runId: identifier.describe("The run. Omit it for the newest run of the workflow.").optional(),
+});
+
 const AGENT_TOOLS = [
   {
     name: "list_agents",
@@ -114,6 +131,18 @@ const AGENT_TOOLS = [
       "Change an agent's name, title, description, provider, model or reasoning effort. Pass only the values to change; call list_models before a model change. A change while the agent works applies before its next turn.",
     schema: UPDATE_AGENT_SCHEMA,
   },
+  {
+    name: "send_agent_message",
+    description:
+      "Send a message from the person to an agent's own chat, as if they typed it there. The agent answers it after the work it already has. A workflow's agent steps run in that chat, so the next step of that agent reads it: give a choice or a note for the next step this way before you approve. Send only what the person asked to send.",
+    schema: SEND_AGENT_MESSAGE_SCHEMA,
+  },
+  {
+    name: "decide_workflow_step",
+    description:
+      "Approve or reject a workflow step that waits for approval, as its button in the app does. Only on the person's own decision in this conversation, never on your own. An approval passes the step's input on unchanged; for a choice or a note, call send_agent_message first. A rejection stops the run.",
+    schema: DECIDE_STEP_SCHEMA,
+  },
 ];
 const AGENT_TOOL_NAMES = new Set(AGENT_TOOLS.map((tool) => tool.name));
 
@@ -132,7 +161,7 @@ const TOOLS = [
 
 const INSTRUCTIONS = [
   "These tools build, change and run the workflows of one OpenBot server, as its Workflows page does, and create the agents that its steps use; the app shows each change. The person who uses this client asks for the changes.",
-  "In the guidance below, openbot.<name> is the tool <name> here. list_agents gives the agent ids for agent steps; create_agent makes a missing one. Deleting a workflow or an agent is done in the app.",
+  "In the guidance below, openbot.<name> is the tool <name> here. list_agents gives the agent ids for agent steps; create_agent makes a missing one. read_workflow_runs shows a step that waits with status approval; decide_workflow_step answers it when the person decides. Deleting a workflow or an agent is done in the app.",
   ...toolGuidance("openbot", "edit_workflow"),
 ].join("\n");
 
@@ -163,7 +192,33 @@ function agentRow(agent: ReturnType<AgentService["listAgents"]>[number]) {
   return { agentId: id, name, title, description, provider, model, reasoningEffort };
 }
 
+/** Answers the approval step of `nodeId` in the run, or the newest run of the workflow. */
+async function decideStep(args: unknown, workflows: ReturnType<WorkflowMcpSources["workflows"]>) {
+  const { workflowId, nodeId, approved, runId } = DECIDE_STEP_SCHEMA.parse(args);
+  const detail =
+    runId === undefined
+      ? (await runCauseEffect(workflows.runs({ workflowId, limit: 1 }))).runs[0]
+      : await runCauseEffect(workflows.run(runId));
+  if (!detail || detail.run.workflowId !== workflowId) return text(`No run ${runId ?? ""} of this workflow.`, true);
+  const waiting = detail.steps.filter((step) => step.status === "approval");
+  const step = waiting.find((candidate) => candidate.nodeId === nodeId);
+  if (!step) {
+    const nodes = waiting.map((candidate) => candidate.nodeId).join(", ") || "none";
+    return text(`No step of node ${nodeId} waits for approval in run ${detail.run.number}. Waiting: ${nodes}.`, true);
+  }
+  await runCauseEffect(workflows.decide({ stepId: step.id, approved }));
+  const after = await runCauseEffect(workflows.run(detail.run.id));
+  return text(JSON.stringify({ runId: detail.run.id, nodeId, approved, runStatus: after.run.status }));
+}
+
 async function agentTool(name: string, args: unknown, service: AgentService): Promise<CallToolResult> {
+  if (name === "send_agent_message") {
+    const { agentId, text: message } = SEND_AGENT_MESSAGE_SCHEMA.parse(args);
+    if (!service.listAgents().some((agent) => agent.id === agentId))
+      return text(`No agent ${agentId}: list_agents gives the ids.`, true);
+    await runCauseEffect(service.sendMessage({ agentId, text: message }));
+    return text(JSON.stringify({ sent: true, agentId }));
+  }
   if (name === "list_agents") return text(JSON.stringify(service.listAgents().map(agentRow)));
   if (name === "list_models") {
     const request = listModelsToolSchema.parse(args);
@@ -223,6 +278,7 @@ async function agentTool(name: string, args: unknown, service: AgentService): Pr
 async function callTool(name: string, args: unknown, sources: WorkflowMcpSources): Promise<CallToolResult> {
   if (!AGENT_TOOL_NAMES.has(name) && !WORKFLOW_TOOL_NAMES.has(name)) return text(`Unknown tool ${name}.`, true);
   try {
+    if (name === "decide_workflow_step") return await decideStep(args, sources.workflows());
     if (AGENT_TOOL_NAMES.has(name)) return await agentTool(name, args, sources.agents);
     const response = await runCauseEffect(
       handleWorkflowTool(

@@ -7,8 +7,9 @@
 //
 // It checks that a wrong token gets no answer, that the tools are the upstream workflow tools without
 // the delete plus the agent tools, that an agent is created with and without a first message and then
-// changed, that a workflow is built on it, read, changed and run, that the model gets the failures it
-// must correct, and that the change events name no agent. On macOS it also starts the server from the
+// changed, that a workflow is built on it, read, changed and run, that an approval step takes a note
+// in the agent's chat and then the decision, that the model gets the failures it must correct, and
+// that the change events name no agent. On macOS it also starts the server from the
 // local token file (workflow-mcp.sh setup-local), with no variable.
 //
 // Run: bun selfhost/scripts/workflow-mcp-e2e.ts
@@ -95,7 +96,7 @@ process.stdin.on("data", (chunk) => {
 `;
 
 // The service and Bun read the home folder when they start, so the test runs again with a home, a
-// Codex and a profile of its own. On a Mac, step 8 puts the local token file in that home.
+// Codex and a profile of its own. On a Mac, step 9 puts the local token file in that home.
 if (process.env.WORKFLOW_MCP_E2E_ROOT === undefined) {
   const root = await mkdtemp(join(tmpdir(), "openbot-workflow-mcp-"));
   const home = join(root, "home");
@@ -275,6 +276,7 @@ try {
   const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
   assert.deepEqual(names, [
     "create_agent",
+    "decide_workflow_step",
     "edit_workflow",
     "list_agents",
     "list_models",
@@ -282,6 +284,7 @@ try {
     "read_workflow",
     "read_workflow_runs",
     "run_workflow",
+    "send_agent_message",
     "update_agent",
   ]);
   console.log("✓ tools:", names.join(", "));
@@ -440,11 +443,72 @@ try {
   );
   console.log("✓ renamed, listed, run", JSON.parse(run.text).runId, "with steps", runs.runs[0].steps.length);
 
-  // 7. The canvas hears each change, with no agent named.
+  // 7. An approval step: the person's note goes to the agent's chat, then the person's decision.
+  const gated = await call("edit_workflow", {
+    title: "MCP approval",
+    ops: [
+      { op: "add", ref: "t", kind: "trigger" },
+      { op: "add", ref: "ok", kind: "approval", from: "t", fields: { question: "Use option 2?" } },
+      { op: "add", ref: "a", kind: "agent", from: "ok", fields: { agentId: imagesRow.agentId, task: "Draw it." } },
+    ],
+  });
+  assert.ok(gated.ok, gated.text);
+  const gate = JSON.parse(gated.text);
+  /** The status of the node's step in the newest run. */
+  const stepStatus = async (nodeId: string) => {
+    const newest = JSON.parse((await call("read_workflow_runs", { workflowId: gate.workflowId })).text).runs[0];
+    return newest.steps.find((step: { nodeId: string }) => step.nodeId === nodeId)?.status;
+  };
+  assert.ok((await call("run_workflow", { workflowId: gate.workflowId })).ok);
+  assert.equal(await stepStatus(gate.ids.ok), "approval");
+  const wrongNode = await call("decide_workflow_step", {
+    workflowId: gate.workflowId,
+    nodeId: gate.ids.a,
+    approved: true,
+  });
+  assert.ok(!wrongNode.ok && wrongNode.text.includes(gate.ids.ok), wrongNode.text);
+  const noRecipient = await call("send_agent_message", { agentId: "agent-nobody", text: "Option 2." });
+  assert.ok(!noRecipient.ok && noRecipient.text.includes("agent-nobody"), noRecipient.text);
+  const answered = agents.listQueue(imagesRow.agentId).deliveries.length;
+  const note = await call("send_agent_message", { agentId: imagesRow.agentId, text: "Option 2, please." });
+  assert.ok(note.ok, note.text);
+  await waitFor("the note to be answered", () => {
+    const deliveries = agents.listQueue(imagesRow.agentId).deliveries;
+    return deliveries.length > answered && deliveries.every((delivery) => delivery.status === "completed");
+  });
+  const approved = await call("decide_workflow_step", {
+    workflowId: gate.workflowId,
+    nodeId: gate.ids.ok,
+    approved: true,
+  });
+  assert.ok(approved.ok, approved.text);
+  assert.deepEqual([await stepStatus(gate.ids.ok), await stepStatus(gate.ids.a)], ["done", "running"]);
+  const again = await call("decide_workflow_step", {
+    workflowId: gate.workflowId,
+    nodeId: gate.ids.ok,
+    approved: true,
+  });
+  assert.ok(!again.ok, again.text);
+  assert.ok((await call("run_workflow", { workflowId: gate.workflowId })).ok);
+  const rejected = await call("decide_workflow_step", {
+    workflowId: gate.workflowId,
+    nodeId: gate.ids.ok,
+    approved: false,
+  });
+  assert.ok(rejected.ok, rejected.text);
+  assert.notEqual(await stepStatus(gate.ids.a), "running", "a rejected run went on");
+  console.log(
+    "✓ approval: note sent, approved",
+    JSON.parse(approved.text).runStatus,
+    "| rejected",
+    JSON.parse(rejected.text).runStatus,
+  );
+
+  // 8. The canvas hears each change, with no agent named.
   assert.ok(changed.length > 0 && changed.every((event) => !event.includes(" by ")), changed.join(", "));
   console.log("✓ change events:", changed.length, "with no agent");
 
-  // 8. On a Mac: the server of the desktop app, from the local token file and with no variable.
+  // 9. On a Mac: the server of the desktop app, from the local token file and with no variable.
   if (process.platform === "darwin") {
     const localDirectory = join(home, ".config", "openbot", "workflow-mcp-local");
     await mkdir(localDirectory, { recursive: true });

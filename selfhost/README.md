@@ -189,6 +189,8 @@ Claude Code → ssh openbotmcp@VPS（这把密钥只能运行 connect.sh）
 - 工作流：`list_workflows`、`read_workflow`、`edit_workflow`（新建、改名、加/改/删节点、连线、定时）、`run_workflow`、`read_workflow_runs`。
 - 步骤用的 agent：`list_agents`（含 provider 和模型）、`list_models`、`create_agent`（名称、头衔、描述、provider、模型、推理强度；可选第一条消息，不给就等工作流派活）、`update_agent`（改名称、头衔、描述、provider、模型、推理强度）。模型和推理强度的校验沿用 agent 自己的 `create_agent`/`update_profile`（`src/backend/agent/model-tools.ts`）。新 agent 的权限和在 App 里新建的一样；权限、Computer Use 只能在 App 里改。
 
+- 审批：`decide_workflow_step`（批准或拒绝等待审批的步骤，和 App 里的按钮一样；拒绝会停掉整个运行），`send_agent_message`（以你的身份给 agent 的对话发消息）。审批本身不能带文字：要给下一步一个选择或意见（比如"选方案 2"），先发到那个 agent 的对话里再批准，工作流的 agent 步骤就在这个对话里跑，能读到。只在你自己说了批准或拒绝时才调用。
+
 删除工作流或 agent 只能在 App 里操作（会丢运行记录或聊天）。侧边栏和画布会实时显示改动。
 
 1. 一次性设置（Mac 上的密钥、VPS 用户 `openbotmcp`、令牌，以及 `/opt/openbot-host/.env` 里的 `WORKFLOW_MCP_TOKEN_SHA256`）：
