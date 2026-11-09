@@ -199,7 +199,8 @@ async function decideStep(args: unknown, workflows: ReturnType<WorkflowMcpSource
     runId === undefined
       ? (await runCauseEffect(workflows.runs({ workflowId, limit: 1 }))).runs[0]
       : await runCauseEffect(workflows.run(runId));
-  if (!detail || detail.run.workflowId !== workflowId) return text(`No run ${runId ?? ""} of this workflow.`, true);
+  if (!detail || detail.run.workflowId !== workflowId)
+    return text(runId === undefined ? "This workflow has no run yet." : `No run ${runId} in this workflow.`, true);
   const waiting = detail.steps.filter((step) => step.status === "approval");
   const step = waiting.find((candidate) => candidate.nodeId === nodeId);
   if (!step) {
