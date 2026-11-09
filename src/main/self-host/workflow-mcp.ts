@@ -6,14 +6,21 @@
  *   MCP client -> `ssh openbotmcp@<VPS>` (a key that runs only connect.sh) -> connect.sh on the VPS
  *   -> 172.31.250.10:47778 in the host container (the token first) -> this server
  *
- * It runs only when OPENBOT_WORKFLOW_MCP_TOKEN_SHA256 is set. The container keeps only the hash of the
- * token, so its agents cannot use this server: an agent changes or runs a workflow only on a person's
- * message, and this server must not open a way around that. A delete stays on the Workflows page.
- * `selfhost/workflow-mcp/workflow-mcp.sh setup root@<VPS>` makes the key, the token and the VPS side.
+ * On the VPS it runs when OPENBOT_WORKFLOW_MCP_TOKEN_SHA256 is set. The container keeps only the hash
+ * of the token, so its agents cannot use this server: an agent changes or runs a workflow only on a
+ * person's message, and this server must not open a way around that. A delete stays on the Workflows
+ * page. `selfhost/workflow-mcp/workflow-mcp.sh setup root@<VPS>` makes the key, the token and the VPS side.
+ *
+ * On a Mac it runs when ~/.config/openbot/workflow-mcp-local/token exists (`workflow-mcp.sh
+ * setup-local`), on 127.0.0.1:47778, and the client runs connect.sh with that address and token file.
+ * The agents of the Mac run as the user, so the file permissions keep out only other users.
  */
 
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import { createServer, type Socket } from "node:net";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, type CallToolResult, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -133,7 +140,7 @@ function serve(socket: Socket, tokenHash: Buffer, sources: WorkflowMcpSources): 
     socket.pause();
     socket.setTimeout(0);
     const token = received.subarray(0, newline).toString("utf8").trim();
-    if (!timingSafeEqual(createHash("sha256").update(token).digest(), tokenHash)) {
+    if (!timingSafeEqual(Buffer.from(sha256(token), "hex"), tokenHash)) {
       logger.warn("Refused a workflow MCP connection without the token.");
       socket.destroy();
       return;
@@ -170,9 +177,27 @@ function listenAddress(value: string): { host: string; port: number } | null {
   return match?.[1] && port > 0 && port < 65_536 ? { host: match[1], port } : null;
 }
 
-/** Starts the server when this host has a token hash. `application-services.ts` calls it once. */
+function sha256(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+/**
+ * The hash of the token: the variable on the VPS, else the hash of the local token file on a Mac. Only a
+ * Mac reads the file: on the VPS an agent can write in the home folder of the container.
+ */
+function expectedTokenHash(): string | null {
+  const variable = process.env[TOKEN_HASH_VARIABLE]?.trim().toLowerCase();
+  if (variable) return variable;
+  if (process.platform !== "darwin") return null;
+  const file = join(homedir(), ".config", "openbot", "workflow-mcp-local", "token");
+  if (!existsSync(file)) return null;
+  const token = readFileSync(file, "utf8").trim();
+  return token ? sha256(token) : null;
+}
+
+/** Starts the server when this host has a token. `application-services.ts` calls it once. */
 export function startWorkflowMcp(sources: WorkflowMcpSources): void {
-  const hash = process.env[TOKEN_HASH_VARIABLE]?.trim().toLowerCase();
+  const hash = expectedTokenHash();
   if (!hash) return;
   const address = listenAddress(process.env[LISTEN_VARIABLE] || DEFAULT_LISTEN);
   if (!/^[0-9a-f]{64}$/u.test(hash) || !address) {

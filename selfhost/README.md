@@ -174,7 +174,7 @@ VPS agent → 172.31.250.1:2222（VPS 内网地址，防火墙只放行主机容
 
 **安全**：开启期间，这台 VPS 上的 agent 能做你在屏幕上能做的任何事；它浏览网页时可能被恶意内容诱导（提示注入）。只在需要时开启，用完关闭。
 
-### 可选：工作流 MCP（用 Claude Code 等外部 AI 搭建 VPS 上的工作流）
+### 可选：工作流 MCP（用 Claude Code 等外部 AI 搭建 VPS 和 Mac 本机的工作流）
 
 OpenBot 里的 agent 本来就能在聊天里搭建工作流。这个 MCP 服务把同一套工具（`src/backend/workflows/workflow-tools.ts`，官方更新会自动带过来）开放给你自己的 MCP 客户端，比如 Mac 终端里的 Claude Code：
 
@@ -202,12 +202,22 @@ Claude Code → ssh openbotmcp@VPS（这把密钥只能运行 connect.sh）
 3. 加到 Claude Code（其他 MCP 客户端也一样：stdio，命令就是这行 ssh）：
 
    ```sh
-   claude mcp add --scope user openbot-workflows -- $(selfhost/workflow-mcp/workflow-mcp.sh command)
+   claude mcp add --scope user openbot-vps-workflows -- $(selfhost/workflow-mcp/workflow-mcp.sh command)
    ```
 
-   在 VPS 上直接用（root）：`claude mcp add openbot-workflows -- /opt/openbot-host/workflow-mcp/connect.sh`。
+   在 VPS 上直接用（root）：`claude mcp add openbot-vps-workflows -- /opt/openbot-host/workflow-mcp/connect.sh`。
 
-**安全**：容器里只有令牌的哈希，所以 VPS 上的 agent 用不了这个服务（OpenBot 规定只有你本人的消息才能改动或运行工作流，这个服务不会绕过这条规则）。能用的是持有这把 SSH 密钥的人。`selfhost/scripts/workflow-mcp-e2e.ts` 用真实数据库检查整条链路，合并官方更新后可以运行一次：`bun selfhost/scripts/workflow-mcp-e2e.ts`。
+**Mac 本机的工作流**：同一个服务也在 Mac 上的 OpenBot 里，只监听 `127.0.0.1:47778`，不经过 SSH。需要包含 `workflow-mcp.ts` 的 DMG。
+
+```sh
+selfhost/workflow-mcp/workflow-mcp.sh setup-local   # 令牌和 connect.sh 放在 ~/.config/openbot/workflow-mcp-local
+# 退出并重新打开 OpenBot（启动时读取令牌），然后：
+claude mcp add --scope user openbot-mac-workflows -- $(selfhost/workflow-mcp/workflow-mcp.sh command-local)
+```
+
+要关闭：删除 `~/.config/openbot/workflow-mcp-local/token`，再重启 OpenBot。
+
+**安全**：VPS 容器里只有令牌的哈希，所以 VPS 上的 agent 用不了这个服务（OpenBot 规定只有你本人的消息才能改动或运行工作流，这个服务不会绕过这条规则）。能用的是持有这把 SSH 密钥的人。Mac 上不一样：本机 agent 以你的用户身份运行，开了"完全访问"的 agent 能读到令牌文件（和它能读到你的 SSH 密钥一样），文件权限只挡住这台 Mac 上的其他用户。`selfhost/scripts/workflow-mcp-e2e.ts` 用真实数据库检查整条链路，合并官方更新后可以运行一次：`bun selfhost/scripts/workflow-mcp-e2e.ts`。
 
 ---
 

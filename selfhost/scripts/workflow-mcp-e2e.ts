@@ -1,20 +1,22 @@
 // Self-hosted fork: checks the workflow MCP server (src/main/self-host/workflow-mcp.ts) on the real
 // SQLite and the real workflow service, on a temporary profile, after a merge from upstream. An MCP
-// client starts a relay process, as an MCP client starts `ssh openbotmcp@<VPS>`; the relay sends the
-// token and passes the messages, as selfhost/workflow-mcp/connect.sh does on the VPS. Agent steps stay
-// running in a stand-in mailbox, so no provider starts.
+// client starts selfhost/workflow-mcp/connect.sh with the system bash (3.2 on macOS), as an MCP client
+// starts `ssh openbotmcp@<VPS>` or the local connect.sh on a Mac. Agent steps stay running in a
+// stand-in mailbox, so no provider starts.
 //
 // It checks that a wrong token gets no answer, that the tools are the upstream workflow tools without
 // the delete plus list_agents, that a workflow is built, read, changed and run, that the model gets
-// the failures it must correct, and that the change events name no agent.
+// the failures it must correct, and that the change events name no agent. On macOS it also starts the
+// server from the local token file (workflow-mcp.sh setup-local), with no variable.
 //
 // Run: bun selfhost/scripts/workflow-mcp-e2e.ts
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { connect, createServer } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Effect } from "effect";
@@ -50,20 +52,38 @@ function answerTo(port: number, line: string): Promise<string> {
   });
 }
 
-/** The relay of connect.sh, in Node: macOS bash 3.2 has no `wait -n`. */
-const RELAY = `
-const socket = require("node:net").connect(Number(process.env.PORT), "127.0.0.1", () => {
-  socket.write(process.env.TOKEN + "\\n");
-  process.stdin.pipe(socket);
-  socket.pipe(process.stdout);
-});
-socket.on("close", () => process.exit(0));
-`;
+const CONNECT = resolve(import.meta.dirname, "../workflow-mcp/connect.sh");
+
+/** An MCP client that starts connect.sh for the server on `port`, with the system bash. */
+async function connectClient(port: number, tokenFile: string): Promise<Client> {
+  const mcp = new Client({ name: "workflow-mcp-e2e", version: "1" });
+  await mcp.connect(
+    new StdioClientTransport({
+      command: "/bin/bash",
+      args: [CONNECT, `127.0.0.1:${port}`, tokenFile],
+      env: getDefaultEnvironment(),
+    }),
+  );
+  return mcp;
+}
+
+// Bun reads HOME only when it starts, so on a Mac the test runs again with a home of its own, where
+// step 7 puts the local token file.
+if (process.platform === "darwin" && process.env.WORKFLOW_MCP_E2E_HOME === undefined) {
+  const home = await mkdtemp(join(tmpdir(), "openbot-workflow-mcp-home-"));
+  const child = spawnSync(process.execPath, [import.meta.filename], {
+    stdio: "inherit",
+    env: { ...process.env, HOME: home, WORKFLOW_MCP_E2E_HOME: home },
+  });
+  await rm(home, { recursive: true, force: true });
+  process.exit(child.status ?? 1);
+}
 
 const directory = await mkdtemp(join(tmpdir(), "openbot-workflow-mcp-"));
 const database = new OpenBotDatabase(directory);
 let workflows: WorkflowsHandle | null = null;
 let client: Client | null = null;
+let localClient: Client | null = null;
 const changed: string[] = [];
 
 try {
@@ -91,6 +111,8 @@ try {
   const handle = workflows;
 
   const token = randomBytes(32).toString("hex");
+  const tokenFile = join(directory, "token");
+  await writeFile(tokenFile, `${token}\n`, { mode: 0o600 });
   const port = await freePort();
   process.env.OPENBOT_WORKFLOW_MCP_TOKEN_SHA256 = createHash("sha256").update(token).digest("hex");
   process.env.OPENBOT_WORKFLOW_MCP_LISTEN = `127.0.0.1:${port}`;
@@ -107,15 +129,8 @@ try {
   assert.equal(await answerTo(port, `wrong-token\n${initialize}\n`), "", "a wrong token got an answer");
   console.log("✓ a wrong token gets no answer");
 
-  // 2. With the token, through a relay process, as on the VPS.
-  client = new Client({ name: "workflow-mcp-e2e", version: "1" });
-  await client.connect(
-    new StdioClientTransport({
-      command: process.execPath,
-      args: ["-e", RELAY],
-      env: { ...getDefaultEnvironment(), PORT: String(port), TOKEN: token },
-    }),
-  );
+  // 2. With the token, through connect.sh, as on the VPS.
+  client = await connectClient(port, tokenFile);
   assert.match(client.getInstructions() ?? "", /Fields by kind/u);
   const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
   assert.deepEqual(names, [
@@ -199,9 +214,29 @@ try {
   // 6. The canvas hears each change, with no agent named.
   assert.ok(changed.length > 0 && changed.every((event) => !event.includes(" by ")), changed.join(", "));
   console.log("✓ change events:", changed.length, "with no agent");
+
+  // 7. On a Mac: the server of the desktop app, from the local token file and with no variable.
+  if (process.platform === "darwin") {
+    const localDirectory = join(homedir(), ".config", "openbot", "workflow-mcp-local");
+    await mkdir(localDirectory, { recursive: true });
+    const localToken = join(localDirectory, "token");
+    await writeFile(localToken, `${randomBytes(32).toString("hex")}\n`, { mode: 0o600 });
+    const localPort = await freePort();
+    delete process.env.OPENBOT_WORKFLOW_MCP_TOKEN_SHA256;
+    process.env.OPENBOT_WORKFLOW_MCP_LISTEN = `127.0.0.1:${localPort}`;
+    startWorkflowMcp({ workflows: () => handle, agents: () => [AGENT] });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(await answerTo(localPort, `${token}\n${initialize}\n`), "", "the VPS token opened the Mac server");
+    localClient = await connectClient(localPort, localToken);
+    const result = await localClient.callTool({ name: "list_workflows", arguments: {} });
+    const first = Array.isArray(result.content) ? result.content[0] : undefined;
+    assert.ok(first && first.type === "text" && first.text.includes("MCP e2e renamed"), JSON.stringify(result));
+    console.log("✓ Mac: the server starts from ~/.config/openbot/workflow-mcp-local/token");
+  }
   console.log("✓ workflow MCP e2e passed");
 } finally {
   await client?.close().catch(() => {});
+  await localClient?.close().catch(() => {});
   if (workflows) await Effect.runPromise(workflows.close()).catch(() => {});
   database.close();
   await rm(directory, { recursive: true, force: true });

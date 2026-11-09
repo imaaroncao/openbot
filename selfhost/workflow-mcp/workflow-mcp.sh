@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# Self-hosted fork: the workflow MCP server of the OpenBot host on the VPS (see selfhost/README.md).
-# An MCP client, such as Claude Code on this Mac, builds and runs the host's workflows through it.
+# Self-hosted fork: the workflow MCP server of OpenBot (see selfhost/README.md). An MCP client, such as
+# Claude Code on this Mac, builds and runs the workflows of the VPS host or of this Mac through it.
 #
 #   selfhost/workflow-mcp/workflow-mcp.sh setup root@<VPS>   one time: key, token, VPS side
-#   selfhost/workflow-mcp/workflow-mcp.sh command            the command line for an MCP client
+#   selfhost/workflow-mcp/workflow-mcp.sh command            the MCP client command line for the VPS
+#   selfhost/workflow-mcp/workflow-mcp.sh setup-local        one time: the token of OpenBot on this Mac
+#   selfhost/workflow-mcp/workflow-mcp.sh command-local      the MCP client command line for this Mac
+#
+# setup-local makes ~/.config/openbot/workflow-mcp-local with a token and connect.sh. OpenBot on this Mac
+# reads the token when it starts, and then serves on 127.0.0.1:47778.
 #
 # setup makes the SSH key in ~/.config/openbot/workflow-mcp, a VPS user `openbotmcp` whose key runs only
 # /opt/openbot-host/workflow-mcp/connect.sh, a token that only that user reads, and its SHA-256 in
@@ -14,12 +19,19 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 CONFIG="$HOME/.config/openbot/workflow-mcp"
+LOCAL="$HOME/.config/openbot/workflow-mcp-local"
 
 command_line() {
   [[ -f "$CONFIG/vps" ]] || { echo "Run: $0 setup root@<VPS>" >&2; exit 1; }
   printf '%q ' ssh -T -i "$CONFIG/id_ed25519" -o IdentitiesOnly=yes -o BatchMode=yes \
     -o ServerAliveInterval=30 -o StrictHostKeyChecking=accept-new \
     -o "UserKnownHostsFile=$CONFIG/known_hosts" "$(cat "$CONFIG/vps")"
+  echo
+}
+
+local_command_line() {
+  [[ -f "$LOCAL/token" ]] || { echo "Run: $0 setup-local" >&2; exit 1; }
+  printf '%q ' "$LOCAL/connect.sh" 127.0.0.1:47778 "$LOCAL/token"
   echo
 }
 
@@ -58,12 +70,25 @@ setup)
   echo "    selfhost/server/scripts/build-linux-host.sh $TARGET"
   echo "    ssh $TARGET 'cd /opt/openbot-host && docker compose up -d'"
   echo "  Then add the server to Claude Code:"
-  echo "    claude mcp add --scope user openbot-workflows -- $(command_line)"
+  echo "    claude mcp add --scope user openbot-vps-workflows -- $(command_line)"
   ;;
 command)
   command_line
   ;;
+setup-local)
+  [[ "$(uname)" == Darwin ]] || { echo "setup-local is for OpenBot on a Mac." >&2; exit 2; }
+  mkdir -p "$LOCAL" && chmod 700 "$LOCAL"
+  [[ -s "$LOCAL/token" ]] || (umask 077 && openssl rand -hex 32 > "$LOCAL/token")
+  chmod 600 "$LOCAL/token"
+  install -m 700 "$HERE/connect.sh" "$LOCAL/connect.sh"
+  echo "✓ Setup done. Quit and open OpenBot on this Mac again: it reads the token when it starts."
+  echo "  Then add the server to Claude Code:"
+  echo "    claude mcp add --scope user openbot-mac-workflows -- $(local_command_line)"
+  ;;
+command-local)
+  local_command_line
+  ;;
 *)
-  echo "usage: $0 setup root@<VPS> | command" >&2; exit 2
+  echo "usage: $0 setup root@<VPS> | command | setup-local | command-local" >&2; exit 2
   ;;
 esac
