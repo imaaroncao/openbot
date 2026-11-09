@@ -1,15 +1,17 @@
 /**
  * Self-hosted fork: the workflow MCP server. An MCP client of the user, such as Claude Code on their
  * Mac, builds and runs the workflows of this OpenBot host with the same tools that its agents use
- * (`src/backend/workflows/workflow-tools.ts`), so a new upstream tool or rule reaches it unchanged:
+ * (`src/backend/workflows/workflow-tools.ts`), so a new upstream tool or rule reaches it unchanged. It
+ * also creates and changes the agents that the steps use, with the checks of the agents' own
+ * create_agent and update_profile (`src/backend/agent/model-tools.ts`):
  *
  *   MCP client -> `ssh openbotmcp@<VPS>` (a key that runs only connect.sh) -> connect.sh on the VPS
  *   -> 172.31.250.10:47778 in the host container (the token first) -> this server
  *
  * On the VPS it runs when OPENBOT_WORKFLOW_MCP_TOKEN_SHA256 is set. The container keeps only the hash
  * of the token, so its agents cannot use this server: an agent changes or runs a workflow only on a
- * person's message, and this server must not open a way around that. A delete stays on the Workflows
- * page. `selfhost/workflow-mcp/workflow-mcp.sh setup root@<VPS>` makes the key, the token and the VPS side.
+ * person's message, and this server must not open a way around that. A delete, of a workflow or of
+ * an agent, stays in the app. `selfhost/workflow-mcp/workflow-mcp.sh setup root@<VPS>` makes the key, the token and the VPS side.
  *
  * On a Mac it runs when ~/.config/openbot/workflow-mcp-local/token exists (`workflow-mcp.sh
  * setup-local`), on 127.0.0.1:47778, and the client runs connect.sh with that address and token file.
@@ -24,12 +26,19 @@ import { join } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, type CallToolResult, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import type { AgentSummary } from "@openbot/contracts/ipc";
-import { createOpenBotLogger } from "@openbot/logging";
+import type { CreateAgentInput } from "@openbot/contracts/ipc";
+import { createOpenBotLogger, redactText } from "@openbot/logging";
 import { Effect } from "effect";
 import { z } from "zod";
 import { advertisedJsonSchema } from "../../backend/agent/advertised-json-schema";
+import { listModelsPayload, requestedRuntime, requestedToolModel } from "../../backend/agent/model-tools";
+import {
+  createAgentToolSchema,
+  listModelsToolSchema,
+  updateProfileToolSchema,
+} from "../../backend/agent/profile-tools";
 import { toolGuidance } from "../../backend/agent/tool-guidance";
+import type { AgentService } from "../../backend/agent-service";
 import { runCauseEffect } from "../../backend/effect-boundary";
 import {
   handleWorkflowTool,
@@ -48,22 +57,72 @@ const TOKEN_WAIT_MS = 10_000;
 /** What the server reads from the running app. */
 export interface WorkflowMcpSources {
   workflows: () => WorkflowTools;
-  agents: () => readonly Pick<AgentSummary, "id" | "name" | "title" | "description">[];
+  agents: AgentService;
 }
 
 /** The upstream workflow tools without the delete, which loses the run history: it stays on the page. */
 const WORKFLOW_TOOLS = WORKFLOW_TOOL_DEFINITIONS.filter((tool) => tool.name !== "delete_workflow");
 const WORKFLOW_TOOL_NAMES = new Set<string>(WORKFLOW_TOOLS.map((tool) => tool.name));
 
-const LIST_AGENTS = {
-  name: "list_agents",
-  description:
-    "List the agents of this OpenBot server: agentId, name, title and description. An agent step needs an agentId.",
-  inputSchema: { type: "object" as const, properties: {}, additionalProperties: false },
-};
+/**
+ * The agents' own create_agent fields. With no caller to copy, a new agent starts where one the user
+ * creates in the app does, and with no first task it waits for its first workflow step.
+ */
+const CREATE_AGENT_SCHEMA = z.strictObject({
+  ...createAgentToolSchema.shape,
+  initialMessage: createAgentToolSchema.shape.initialMessage
+    .optional()
+    .describe("A first message that the agent answers at once. Omit it for an agent that waits for its steps."),
+  provider: createAgentToolSchema.shape.provider.describe(
+    "Provider from list_models. Omit provider and model for the app's default, as a new agent in the app gets.",
+  ),
+});
+
+/** The fields of update_profile that set up a step's agent. Access and Computer Use stay in the app. */
+const UPDATE_AGENT_SCHEMA = updateProfileToolSchema.pick({
+  agentId: true,
+  name: true,
+  title: true,
+  description: true,
+  provider: true,
+  model: true,
+  reasoningEffort: true,
+});
+
+const AGENT_TOOLS = [
+  {
+    name: "list_agents",
+    description:
+      "List the agents of this OpenBot server: agentId, name, title, description, provider, model and reasoningEffort. An agent step needs an agentId.",
+    schema: z.strictObject({}),
+  },
+  {
+    name: "list_models",
+    description:
+      "List the models each provider of this server offers: id, name, reasoning efforts and the default model. With no query, each provider lists its default, the models in use and its first models; omittedModels counts the rest. Read-only.",
+    schema: listModelsToolSchema,
+  },
+  {
+    name: "create_agent",
+    description:
+      "Create an agent for workflow steps, such as one on a provider that makes images. Call list_models first for a provider or model. Returns the agent with its agentId. A new agent has the access and Computer Use that the app gives a new agent.",
+    schema: CREATE_AGENT_SCHEMA,
+  },
+  {
+    name: "update_agent",
+    description:
+      "Change an agent's name, title, description, provider, model or reasoning effort. Pass only the values to change; call list_models before a model change. A change while the agent works applies before its next turn.",
+    schema: UPDATE_AGENT_SCHEMA,
+  },
+];
+const AGENT_TOOL_NAMES = new Set(AGENT_TOOLS.map((tool) => tool.name));
 
 const TOOLS = [
-  LIST_AGENTS,
+  ...AGENT_TOOLS.map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    inputSchema: { ...advertisedJsonSchema(tool.schema), type: "object" as const },
+  })),
   ...WORKFLOW_TOOLS.map((tool) => ({
     name: tool.name,
     description: tool.description,
@@ -72,8 +131,8 @@ const TOOLS = [
 ];
 
 const INSTRUCTIONS = [
-  "These tools build, change and run the workflows of one OpenBot server, as its Workflows page does; an open canvas shows each change. The person who uses this client asks for the changes.",
-  "In the guidance below, openbot.<name> is the tool <name> here. list_agents gives the agent ids for agent steps. Deleting a workflow is done on the Workflows page.",
+  "These tools build, change and run the workflows of one OpenBot server, as its Workflows page does, and create the agents that its steps use; the app shows each change. The person who uses this client asks for the changes.",
+  "In the guidance below, openbot.<name> is the tool <name> here. list_agents gives the agent ids for agent steps; create_agent makes a missing one. Deleting a workflow or an agent is done in the app.",
   ...toolGuidance("openbot", "edit_workflow"),
 ].join("\n");
 
@@ -89,15 +148,82 @@ function unattributed(workflows: WorkflowTools): WorkflowTools {
   return { ...workflows, create: (input) => workflows.create(input), saveGraph: (input) => workflows.saveGraph(input) };
 }
 
-async function callTool(name: string, args: unknown, sources: WorkflowMcpSources): Promise<CallToolResult> {
-  if (name === LIST_AGENTS.name) {
-    const agents = sources
-      .agents()
-      .map(({ id, name, title, description }) => ({ agentId: id, name, title, description }));
-    return text(JSON.stringify(agents));
+/** The message of a failure: a tagged error of the service carries it in its cause. */
+function failureText(error: unknown, depth = 0): string {
+  if (error instanceof z.ZodError) return z.prettifyError(error);
+  if (error instanceof Error && error.message) return error.message;
+  if (depth < 4 && typeof error === "object" && error !== null && "cause" in error)
+    return failureText(error.cause, depth + 1);
+  return String(error);
+}
+
+/** The agent as list_agents shows it. */
+function agentRow(agent: ReturnType<AgentService["listAgents"]>[number]) {
+  const { id, name, title, description, provider, model, reasoningEffort } = agent;
+  return { agentId: id, name, title, description, provider, model, reasoningEffort };
+}
+
+async function agentTool(name: string, args: unknown, service: AgentService): Promise<CallToolResult> {
+  if (name === "list_agents") return text(JSON.stringify(service.listAgents().map(agentRow)));
+  if (name === "list_models") {
+    const request = listModelsToolSchema.parse(args);
+    const payload = listModelsPayload(
+      service.listModels(),
+      service.preferredProvider(),
+      (provider) => service.getStatus().providers?.find((row) => row.id === provider)?.accounts,
+      {
+        ...request,
+        inUse: service.listAgents().map((agent) => ({ provider: agent.provider, model: agent.model })),
+      },
+    );
+    return text(redactText(JSON.stringify(payload)));
   }
-  if (!WORKFLOW_TOOL_NAMES.has(name)) return text(`Unknown tool ${name}.`, true);
+  if (name === "create_agent") {
+    const request = CREATE_AGENT_SCHEMA.parse(args);
+    // An unknown model, or an effort that the model does not have, is refused before the agent exists.
+    const model = requestedToolModel(request, service.listModels());
+    if (!model && request.reasoningEffort)
+      return text("Name a provider or a model from list_models with reasoningEffort.", true);
+    const input: Omit<CreateAgentInput, "initialMessage"> = {
+      name: request.name,
+      description: request.description,
+      avatarSeed: request.avatarSeed ?? randomUUID(),
+      avatarHue: request.avatarHue ?? null,
+      ...(model
+        ? {
+            provider: model.provider,
+            model: model.id,
+            ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}),
+          }
+        : {}),
+    };
+    const { title, initialMessage } = request;
+    const agent = initialMessage
+      ? await runCauseEffect(
+          service.createAgent(
+            { ...input, initialMessage },
+            title === undefined ? undefined : (created) => service.updateAgent({ agentId: created.id, title }),
+          ),
+        )
+      : await runCauseEffect(service.createAgentProfile({ ...input, ...(title === undefined ? {} : { title }) }));
+    return text(JSON.stringify(agentRow(agent)));
+  }
+  const { agentId, provider, model, reasoningEffort, ...profile } = UPDATE_AGENT_SCHEMA.parse(args);
+  const target = service.listAgents().find((agent) => agent.id === agentId);
+  if (!target) return text(`No agent ${agentId}: list_agents gives the ids.`, true);
+  // JSON arguments leave a value out rather than pass undefined, so each key here is a change.
+  const change = {
+    ...profile,
+    ...requestedRuntime(target, { provider, model, reasoningEffort }, service.listModels()),
+  };
+  if (Object.keys(change).length === 0) return text("Pass at least one value to change.", true);
+  return text(JSON.stringify(agentRow(await runCauseEffect(service.updateAgent({ ...change, agentId })))));
+}
+
+async function callTool(name: string, args: unknown, sources: WorkflowMcpSources): Promise<CallToolResult> {
+  if (!AGENT_TOOL_NAMES.has(name) && !WORKFLOW_TOOL_NAMES.has(name)) return text(`Unknown tool ${name}.`, true);
   try {
+    if (AGENT_TOOL_NAMES.has(name)) return await agentTool(name, args, sources.agents);
     const response = await runCauseEffect(
       handleWorkflowTool(
         name,
@@ -106,7 +232,7 @@ async function callTool(name: string, args: unknown, sources: WorkflowMcpSources
         "",
         // A run takes this as its request id.
         `workflow-mcp-${randomUUID()}`,
-        new Set(sources.agents().map((agent) => agent.id)),
+        new Set(sources.agents.listAgents().map((agent) => agent.id)),
         () => Effect.succeed(false),
       ),
     );
@@ -116,9 +242,8 @@ async function callTool(name: string, args: unknown, sources: WorkflowMcpSources
       ...(response.success ? {} : { isError: true }),
     };
   } catch (error) {
-    // Bad arguments are for the model to correct, as for an agent; the rest is a host fault.
-    const message =
-      error instanceof z.ZodError ? z.prettifyError(error) : error instanceof Error ? error.message : String(error);
+    // Bad arguments are for the model to correct, as for an agent; the rest is logged too.
+    const message = redactText(failureText(error));
     if (!(error instanceof z.ZodError)) logger.warn("A workflow MCP call failed.", { tool: name, message });
     return text(message, true);
   }

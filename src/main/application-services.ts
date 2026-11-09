@@ -2189,7 +2189,7 @@ export async function createApplicationServices({
     }),
   );
   // Self-hosted fork: the workflow MCP server (src/main/self-host/workflow-mcp.ts), off without its token.
-  startWorkflowMcp({ workflows: () => workflowRuntime, agents: () => service.listAgents() });
+  startWorkflowMcp({ workflows: () => workflowRuntime, agents: service });
   workflowTriggers = new WorkflowTriggers({
     store: workflowStore,
     timezone: () => serverTimezone.effective(),

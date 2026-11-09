@@ -65,7 +65,7 @@ hook src/renderer/src/features/sidebar/WorkspaceSidebar.tsx 'vendorPromotionsEna
 hook src/renderer/src/features/web-client/WebWorkspace.tsx 'vendorPromotionsEnabled && !communityCard.dismissed()' "no community card (web)"
 hook src/main/application-services.ts 'registerMacBridgeDriver(() => cuaDriver.mcpServerConfig());' "Mac bridge gets the Computer Use driver"
 hook src/main/main-window.ts 'setMacBridge(item.checked)' "Mac bridge menu switch"
-hook src/main/application-services.ts 'startWorkflowMcp({ workflows: () => workflowRuntime' "workflow MCP server gets the workflows"
+hook src/main/application-services.ts 'startWorkflowMcp({ workflows: () => workflowRuntime, agents: service })' "workflow MCP server gets the workflows and the agents"
 hook apps/auth-api/src/server/smtp-email-delivery.ts 'Cloudflare Email Service SMTP' "SMTP username may be api_token (Cloudflare)"
 
 # A second `onBeforeRequest` on a session replaces the guard's listener.

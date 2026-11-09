@@ -184,7 +184,12 @@ Claude Code → ssh openbotmcp@VPS（这把密钥只能运行 connect.sh）
   → 172.31.250.10:47778（主机容器里的 OpenBot，校验令牌的 SHA-256）
 ```
 
-工具：`list_agents`、`list_workflows`、`read_workflow`、`edit_workflow`（新建、改名、加/改/删节点、连线、定时）、`run_workflow`、`read_workflow_runs`。删除工作流只能在工作流页面里操作（会丢运行记录）。画布打开时会实时显示改动。
+工具：
+
+- 工作流：`list_workflows`、`read_workflow`、`edit_workflow`（新建、改名、加/改/删节点、连线、定时）、`run_workflow`、`read_workflow_runs`。
+- 步骤用的 agent：`list_agents`（含 provider 和模型）、`list_models`、`create_agent`（名称、头衔、描述、provider、模型、推理强度；可选第一条消息，不给就等工作流派活）、`update_agent`（改名称、头衔、描述、provider、模型、推理强度）。模型和推理强度的校验沿用 agent 自己的 `create_agent`/`update_profile`（`src/backend/agent/model-tools.ts`）。新 agent 的权限和在 App 里新建的一样；权限、Computer Use 只能在 App 里改。
+
+删除工作流或 agent 只能在 App 里操作（会丢运行记录或聊天）。侧边栏和画布会实时显示改动。
 
 1. 一次性设置（Mac 上的密钥、VPS 用户 `openbotmcp`、令牌，以及 `/opt/openbot-host/.env` 里的 `WORKFLOW_MCP_TOKEN_SHA256`）：
 
@@ -306,7 +311,7 @@ selfhost/scripts/sync-upstream.sh --tag   # 或者只合并最新的正式版本
 | `selfhost/server/*`（新增） | VPS 服务端：Caddy + 账号服务 + Signal + TURN；常驻 Linux 主机 |
 | `apps/auth-api/src/server/smtp-email-delivery.ts` | SMTP 用户名不再要求是邮箱（Cloudflare 用 `api_token`） |
 | `src/main/application-services.ts`、`main-window.ts` + `src/main/self-host/mac-bridge.ts`（新增） | Mac 桥接：拿到 Computer Use 驱动；菜单开关 |
-| `src/main/application-services.ts` + `src/main/self-host/workflow-mcp.ts`（新增） | 工作流 MCP：一行启动，复用官方工作流工具 |
+| `src/main/application-services.ts` + `src/main/self-host/workflow-mcp.ts`（新增） | 工作流 MCP：一行启动，复用官方工作流工具和 agent 的建立、模型校验 |
 
 ---
 
