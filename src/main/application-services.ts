@@ -350,6 +350,7 @@ import {
   type SecretStorageCipher,
 } from "./secret-storage-cipher";
 import { registerMacBridgeDriver } from "./self-host/mac-bridge";
+import { startWorkflowMcp } from "./self-host/workflow-mcp";
 import { SERVER_AUDIT_FILE, ServerAuditStore, serverAuditNames } from "./server-audit-store";
 import { AGENT_PROCESS_VARIABLE, agentProcessEnvironment, ServerMemory } from "./server-memory";
 import { ServerMode, type ServerModeEnvironment } from "./server-mode";
@@ -2187,6 +2188,8 @@ export async function createApplicationServices({
       runEnded: (end) => service.notifyWorkflowRunEnded(end),
     }),
   );
+  // Self-hosted fork: the workflow MCP server (src/main/self-host/workflow-mcp.ts), off without its token.
+  startWorkflowMcp({ workflows: () => workflowRuntime, agents: () => service.listAgents() });
   workflowTriggers = new WorkflowTriggers({
     store: workflowStore,
     timezone: () => serverTimezone.effective(),

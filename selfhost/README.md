@@ -174,6 +174,41 @@ VPS agent → 172.31.250.1:2222（VPS 内网地址，防火墙只放行主机容
 
 **安全**：开启期间，这台 VPS 上的 agent 能做你在屏幕上能做的任何事；它浏览网页时可能被恶意内容诱导（提示注入）。只在需要时开启，用完关闭。
 
+### 可选：工作流 MCP（用 Claude Code 等外部 AI 搭建 VPS 上的工作流）
+
+OpenBot 里的 agent 本来就能在聊天里搭建工作流。这个 MCP 服务把同一套工具（`src/backend/workflows/workflow-tools.ts`，官方更新会自动带过来）开放给你自己的 MCP 客户端，比如 Mac 终端里的 Claude Code：
+
+```
+Claude Code → ssh openbotmcp@VPS（这把密钥只能运行 connect.sh）
+  → /opt/openbot-host/workflow-mcp/connect.sh（读取令牌）
+  → 172.31.250.10:47778（主机容器里的 OpenBot，校验令牌的 SHA-256）
+```
+
+工具：`list_agents`、`list_workflows`、`read_workflow`、`edit_workflow`（新建、改名、加/改/删节点、连线、定时）、`run_workflow`、`read_workflow_runs`。删除工作流只能在工作流页面里操作（会丢运行记录）。画布打开时会实时显示改动。
+
+1. 一次性设置（Mac 上的密钥、VPS 用户 `openbotmcp`、令牌，以及 `/opt/openbot-host/.env` 里的 `WORKFLOW_MCP_TOKEN_SHA256`）：
+
+   ```sh
+   selfhost/workflow-mcp/workflow-mcp.sh setup root@你的VPS
+   ```
+
+2. 用包含 `src/main/self-host/workflow-mcp.ts` 的新镜像重启主机容器（会中断正在运行的 agent）：
+
+   ```sh
+   selfhost/server/scripts/build-linux-host.sh root@你的VPS
+   ssh root@你的VPS 'cd /opt/openbot-host && docker compose up -d'
+   ```
+
+3. 加到 Claude Code（其他 MCP 客户端也一样：stdio，命令就是这行 ssh）：
+
+   ```sh
+   claude mcp add --scope user openbot-workflows -- $(selfhost/workflow-mcp/workflow-mcp.sh command)
+   ```
+
+   在 VPS 上直接用（root）：`claude mcp add openbot-workflows -- /opt/openbot-host/workflow-mcp/connect.sh`。
+
+**安全**：容器里只有令牌的哈希，所以 VPS 上的 agent 用不了这个服务（OpenBot 规定只有你本人的消息才能改动或运行工作流，这个服务不会绕过这条规则）。能用的是持有这把 SSH 密钥的人。`selfhost/scripts/workflow-mcp-e2e.ts` 用真实数据库检查整条链路，合并官方更新后可以运行一次：`bun selfhost/scripts/workflow-mcp-e2e.ts`。
+
 ---
 
 ## 2. 桌面端 DMG
@@ -260,6 +295,8 @@ selfhost/scripts/sync-upstream.sh --tag   # 或者只合并最新的正式版本
 | `selfhost/desktop/electron-builder.selfhost.yml`（新增） | 你的 appId，无更新源，无官方 provisioning profile |
 | `selfhost/server/*`（新增） | VPS 服务端：Caddy + 账号服务 + Signal + TURN；常驻 Linux 主机 |
 | `apps/auth-api/src/server/smtp-email-delivery.ts` | SMTP 用户名不再要求是邮箱（Cloudflare 用 `api_token`） |
+| `src/main/application-services.ts`、`main-window.ts` + `src/main/self-host/mac-bridge.ts`（新增） | Mac 桥接：拿到 Computer Use 驱动；菜单开关 |
+| `src/main/application-services.ts` + `src/main/self-host/workflow-mcp.ts`（新增） | 工作流 MCP：一行启动，复用官方工作流工具 |
 
 ---
 

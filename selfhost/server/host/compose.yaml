@@ -22,6 +22,10 @@ services:
       # Your own GitHub App (selfhost/scripts/create-github-app.sh). Empty: no GitHub connection.
       OPENBOT_GITHUB_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:-}
       OPENBOT_GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      # The workflow MCP server (selfhost/workflow-mcp/workflow-mcp.sh): the SHA-256 of its token. Empty: off.
+      # The VPS reaches it on 172.31.250.10:47778; no port is published.
+      OPENBOT_WORKFLOW_MCP_TOKEN_SHA256: ${WORKFLOW_MCP_TOKEN_SHA256:-}
+      OPENBOT_WORKFLOW_MCP_LISTEN: 0.0.0.0:47778
     volumes:
       - openbot-data:/data
     # A fixed address: the TURN server (scripts/deploy.sh) relays to this one private address only.
