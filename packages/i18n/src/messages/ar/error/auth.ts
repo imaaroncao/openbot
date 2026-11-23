@@ -4,6 +4,7 @@ import type { messages as source } from "../../en/error/auth";
 export const messages = {
   "error.auth.serviceUnavailable":
     "تعذّر على OpenBot الوصول إلى خدمة الحساب. تحقّق من أن الواجهة البرمجية API تعمل، ثم أعد المحاولة.",
+  "error.auth.sessionTimeout": "لم يستجب OpenBot في الوقت المحدد. تحقق من اتصالك بالإنترنت، ثم حاول مرة أخرى.",
   "error.auth.networkBlocked":
     "منع جدار حماية أو وكيل شبكة في هذه الشبكة OpenBot من الوصول إلى {host}. اطلب من مسؤول الشبكة السماح بـ {host}، ثم أعد المحاولة.",
   "error.auth.signInFirst": "سجّل الدخول إلى OpenBot أولًا.",
@@ -17,6 +18,7 @@ export const messages = {
   "error.auth.serviceTimeout": "لم تستجب خدمة الحساب في الوقت المحدد. أعد المحاولة.",
   "error.auth.serviceStatus": "أعادت خدمة الحساب خطأً ({status}). أعد المحاولة لاحقًا.",
   "error.auth.invalidHostedServer": "أعادت خدمة الحساب خادمًا مستضافًا غير صالح.",
+  "error.auth.invalidServerClaim": "أعادت خدمة الحساب رمز خادم غير صالح.",
   "error.auth.codeNotSent": "تعذّر على OpenBot إرسال رمز تسجيل الدخول.",
   "error.auth.deliveryTimeout":
     "تعذّر على OpenBot تأكيد التسليم في الوقت المحدد. قد يصل الرمز رغم ذلك؛ تحقّق من التسليم قبل الإرسال مرة أخرى.",

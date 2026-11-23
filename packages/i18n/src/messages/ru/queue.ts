@@ -7,6 +7,8 @@ export const messages = {
   "queue.attachment": "Вложение",
   "queue.hold.named": "Ожидание — {name} работает в канале {channel}",
   "queue.hold.unnamed": "Ожидание — этот агент работает в канале {channel}",
+  "queue.hold.providerRestart": "Ожидание — {provider} перезапустится после завершения текущих задач",
+  "queue.hold.signIn": "Ожидание — нужно войти в {provider}",
   "queue.item.label": "Сообщение в очереди {position}: {preview}",
   "queue.item.labelEditing": "Сообщение в очереди {position}, редактируется: {preview}",
   "queue.item.editing": "Редактируется",
@@ -21,6 +23,7 @@ export const messages = {
   "queue.item.steerFallback.providerUnsupported":
     "Этот провайдер не умеет направлять выполняемый ход, поэтому сообщение ждёт в очереди.",
   "queue.item.steerFallback.steerFailed": "Направить не удалось, поэтому сообщение ждёт в очереди.",
+  "queue.item.steerFallback.routineRun": "Сейчас выполняется регулярная задача, поэтому сообщение ждёт в очереди.",
   "queue.item.runAsTask": "Запустить в новой ветке",
   "queue.item.runAsTaskLabel": "Запустить сообщение в очереди {position} в новой ветке",
   "queue.item.deleteLabel": "Удалить сообщение в очереди {position}",

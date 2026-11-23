@@ -2,9 +2,9 @@ import type { PartialTranslation } from "../../../message";
 import type { messages as source } from "../../en/error/auth";
 
 export const messages = {
-  // Errors from the OpenBot account service.
   "error.auth.serviceUnavailable":
     "OpenBot n’a pas pu joindre le service de compte. Vérifiez que l’API fonctionne, puis réessayez.",
+  "error.auth.sessionTimeout": "OpenBot n’a pas répondu à temps. Vérifiez votre connexion internet, puis réessayez.",
   "error.auth.networkBlocked":
     "Un pare-feu ou un proxy de ce réseau a empêché OpenBot de joindre {host}. Demandez à votre administrateur réseau d’autoriser {host}, puis réessayez.",
   "error.auth.signInFirst": "Connectez-vous d’abord à OpenBot.",
@@ -21,6 +21,7 @@ export const messages = {
   "error.auth.serviceTimeout": "Le service de compte n’a pas répondu à temps. Réessayez.",
   "error.auth.serviceStatus": "Le service de compte a renvoyé une erreur ({status}). Réessayez plus tard.",
   "error.auth.invalidHostedServer": "Le service de compte a renvoyé un serveur hébergé invalide.",
+  "error.auth.invalidServerClaim": "Le service de compte a renvoyé un code de serveur invalide.",
   "error.auth.codeNotSent": "OpenBot n’a pas pu envoyer le code de connexion.",
   "error.auth.deliveryTimeout":
     "OpenBot n’a pas pu confirmer l’envoi à temps. Le code peut encore arriver ; vérifiez sa réception avant de le renvoyer.",

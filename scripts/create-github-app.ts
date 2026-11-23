@@ -7,29 +7,12 @@ import { join, resolve } from "node:path";
 import { createOpenBotLogger, registerSecretValue, toLogValue } from "@openbot/logging";
 import { z } from "zod";
 
-/**
- * Creates the GitHub App that the built-in GitHub connection signs in to, from
- * `scripts/github-app/manifest.json`, with the GitHub App manifest flow.
- *
- *   bun scripts/create-github-app.ts [--org <organization>]
- *
- * The script serves one page on 127.0.0.1. The page sends the manifest to GitHub, GitHub asks you to
- * confirm the app, and then sends you back here with a code. The script trades that code for the
- * app's settings. It prints the Client ID, which is public, and writes the client secret, the private
- * key and the webhook secret to `~/.config/openbot/github-app-<slug>.json` with mode 0600. OpenBot
- * does not use them: keep them in a password manager.
- *
- * https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest
- */
-
 const logger = createOpenBotLogger("create-github-app");
-/** GitHub accepts the code for one hour. The script waits for less. */
 const WAIT_MS = 30 * 60_000;
 // Self-hosted fork: selfhost/scripts/create-github-app.sh passes its own manifest.
 const MANIFEST_PATH =
   process.env.OPENBOT_GITHUB_APP_MANIFEST?.trim() || resolve(import.meta.dirname, "github-app/manifest.json");
 
-/** The fields that this script checks. GitHub reads the rest of the manifest as it is. */
 const manifestSchema = z.looseObject({ name: z.string().min(1), url: z.string().url() });
 
 const conversionSchema = z.object({
@@ -92,8 +75,6 @@ async function saveSecrets(conversion: Conversion): Promise<string> {
     privateKey: conversion.pem,
   };
   const contents = `${JSON.stringify(secrets, null, 2)}\n`;
-  // `wx`: a second run never replaces the secrets of an app that the first run created. GitHub
-  // shows these secrets once, so a file that is already there gets a sibling, not an error.
   const path = join(directory, `github-app-${conversion.slug}.json`);
   try {
     await writeFile(path, contents, { mode: 0o600, flag: "wx" });
@@ -124,7 +105,6 @@ async function main(): Promise<void> {
   const conversion = await new Promise<Conversion>((resolveConversion, reject) => {
     let origin = "";
     let settled = false;
-    /** GitHub accepts a code once. A second answer, such as a reload of the page, is refused here. */
     let converting = false;
     const finish = (result: { conversion: Conversion } | { error: unknown }) => {
       if (settled) return;
@@ -178,7 +158,6 @@ async function main(): Promise<void> {
     });
   });
 
-  // The public settings first: they stay on the terminal if the secrets cannot be written.
   logger.info(`GitHub created the app ${conversion.slug}: ${conversion.html_url}`);
   logger.info("Put the Client ID in GITHUB_APP_CLIENT_ID in src/main/github-connector-config.ts:");
   process.stdout.write(`${conversion.client_id}\n`);

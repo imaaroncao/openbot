@@ -117,6 +117,7 @@ export const messages = {
   "marketplace.app.partialTitle": "{name} אינו שלם",
   "marketplace.app.partialDescription": "חלק מהאפליקציות או המיומנויות שלו לא הותקנו. חיבור מחדש יתקין אותן.",
   "marketplace.app.notConnected": "לא מחובר",
+  "marketplace.app.paused": "מושהה",
   "marketplace.app.custom": "שרת MCP",
   "marketplace.app.githubTagline": "מאגרים, בעיות ו-pull requests",
   "marketplace.app.onePasswordTagline": "התחברות לאתרים עם פרטי כניסה משותפים",
@@ -140,7 +141,16 @@ export const messages = {
   "marketplace.app.remove.action": "הסרה",
   "marketplace.app.remove.confirmTitle": "להסיר את {name}?",
   "marketplace.app.remove.keep": "שמירה",
+  "marketplace.app.replace.title": "להחליף את {server}?",
+  "marketplace.app.replace.description":
+    "כבר יש לך שרת בשם {server}, אבל הוא לא {name}. להחליף אותו ב-{name}? הכתובת והמפתחות השמורים שלו יימחקו.",
+  "marketplace.app.replace.action": "החלפה",
   "marketplace.app.connection": "חיבור",
+  "marketplace.app.access.use": "יכול להשתמש",
+  "marketplace.app.access.noAgents": "אין סוכנים",
+  "marketplace.app.access.agentsOf": "סוכנים שיכולים להשתמש ב-{name}",
+  "marketplace.app.access.chooseAgents": "{name}: {summary}. בחירת סוכנים",
+  "marketplace.app.access.level": "גישה של {role} אל {name}",
   "marketplace.app.setup.account": "יש להתחבר לחשבון {name} שלך בדפדפן.",
   "marketplace.app.setup.key": "נדרש מפתח API מחשבון {name} שלך.",
   "marketplace.app.setup.keySaved": "{field} נשמר ב-{host}.",
@@ -148,6 +158,11 @@ export const messages = {
   "marketplace.app.setup.desktop": "פועל באפליקציית שולחן העבודה של {name} בכתובת {address}.",
   "marketplace.app.setup.desktopConnected": "מחובר אל {address}.",
   "marketplace.app.setup.open": "אין צורך בהתחברות או במפתח.",
+  "marketplace.app.blocked.update":
+    "ב-{host} פועלת גרסה ישנה של OpenBot שלא יכולה לחבר אפליקציות. עדכנו את OpenBot ב-{host}, או בקשו מהבעלים לעדכן אותה.",
+  "marketplace.app.blocked.member":
+    "רק בעלים או מנהל של {host} יכולים לחבר שם אפליקציות. בקשו מאחד מהם לחבר את {name}, או לעדכן את OpenBot ב-{host} כדי שחברים יוכלו לחבר אפליקציות.",
+  "marketplace.app.blocked.mac": "{name} פועל רק ב-Mac שמריץ את OpenBot.",
   "marketplace.app.connectAgain": "חיבור מחדש",
   "marketplace.app.automation.askOnInstall": "בקשת גישה מ-macOS בהתקנה",
   "marketplace.app.automation.title": "גישה לאפליקציות של Apple",
@@ -207,6 +222,23 @@ export const messages = {
   "marketplace.plugin.cobrain.prompt.startSession": "טען את ההקשר של Cobrain לפרויקט הזה לפני שנתחיל.",
   "marketplace.plugin.cobrain.prompt.searchDecision": "חפש בהערות Cobrain שלי מה החלטנו לגבי התמחור.",
   "marketplace.plugin.cobrain.prompt.saveNote": "שמור ב-Cobrain הערה עם מה שעשינו היום ומה נשאר.",
+  "marketplace.plugin.honcho.tagline": "הזיכרון שלך בכל כלי ה-AI",
+  "marketplace.plugin.honcho.description":
+    "Honcho של Plastic Labs נותן לסוכנים זיכרון לטווח ארוך עליך, שכלי AI אחרים שחיברת יכולים לשתף. הסוכנים שומרים את מה שהם לומדים, ו-Honcho מסיק ממנו מודל של ההעדפות, המטרות ודרכי העבודה שלך. הסוכנים שואלים אותו שאלות לפני שהם מתחילים. לסוכני OpenBot יש גם זיכרון משלהם; Honcho הוא הזיכרון שעובר איתך לכלים אחרים. הודעות שהסוכנים שומרים נשלחות לחשבון Honcho שלך.",
+  "marketplace.plugin.honcho.app": "שמירה ושאילתות של זיכרון לטווח ארוך בסביבות העבודה שלך ב-Honcho דרך שרת MCP אחד.",
+  "marketplace.plugin.honcho.prompt.recall": "לפני שנתחיל, שאל את Honcho מה הוא יודע על הדרך שבה אני אוהב לעבוד.",
+  "marketplace.plugin.honcho.prompt.save": "שמור ב-Honcho את ההחלטות מהשרשור הזה.",
+  "marketplace.plugin.honcho.prompt.preferences": "מה Honcho אומר על סגנון הכתיבה שלי? השתמש בזה בטיוטה הזו.",
+  "marketplace.plugin.honcho.hint.apiKey": "צור מפתח ב-app.honcho.dev.",
+  "marketplace.plugin.hindsight.tagline": "זיכרון שלומד עם הזמן",
+  "marketplace.plugin.hindsight.description":
+    "Hindsight של Vectorize נותן לסוכנים זיכרון לטווח ארוך ב-Hindsight Cloud. הסוכנים שומרים עובדות ואירועים, מאחזרים אותם לפי משמעות, זמן וישות, ומהרהרים בהם כדי ליצור מודלים מנטליים. הזיכרונות נשמרים בבנקים, והסוכנים יכולים ליצור בנק לכל פרויקט או אדם. לסוכני OpenBot יש גם זיכרון משלהם; Hindsight הוא הזיכרון שכלי AI אחרים שחיברת יכולים לשתף. מה שהסוכנים שומרים נשלח לחשבון Hindsight Cloud שלך.",
+  "marketplace.plugin.hindsight.app": "שמירה, אחזור והרהור בזיכרונות בבנקים שלך ב-Hindsight Cloud דרך שרת MCP אחד.",
+  "marketplace.plugin.hindsight.prompt.recall": "לפני שנתחיל, אחזר מ-Hindsight מה אנחנו יודעים על הפרויקט הזה.",
+  "marketplace.plugin.hindsight.prompt.retain": "שמור ב-Hindsight את ההחלטות והשאלות הפתוחות מהשרשור הזה.",
+  "marketplace.plugin.hindsight.prompt.reflect":
+    "הרהר בזיכרונות שלי ב-Hindsight: אילו דפוסים אתה רואה בעבודה שלי בחודש האחרון?",
+  "marketplace.plugin.hindsight.hint.apiKey": "צור מפתח בדף Connect של Hindsight Cloud.",
   "marketplace.plugin.figma.tagline": "עיצובים ואבות טיפוס",
   "marketplace.plugin.figma.description":
     "Figma מאפשר לסוכנים לקרוא קובצי עיצוב, לבדוק רכיבים, סגנונות ומשתנים ולמסור מפרטי ייצור למהנדסים. הוא מתחבר לשרת MCP באפליקציית Figma לשולחן העבודה, במחשב הזה. השרת יכול לקרוא עיצובים בלבד; תמיכה בכתיבה בפיתוח.",
@@ -231,6 +263,14 @@ export const messages = {
   "marketplace.plugin.higgsfield.prompt.credits": "כמה קרדיטים של Higgsfield יש לי?",
   "marketplace.plugin.higgsfield.prompt.productShot": "צור ב-Higgsfield תמונת מוצר של ספל קרמיקה על שולחן עץ.",
   "marketplace.plugin.higgsfield.prompt.clip": "צור ב-Higgsfield סרטון של 5 שניות של גלים בשקיעה.",
+  "marketplace.plugin.sunra.tagline": "תמונות, סרטונים, אודיו ו-3D מבוססי AI",
+  "marketplace.plugin.sunra.description":
+    "Sunra מאפשר לסוכנים ליצור תמונות, סרטונים, אודיו ומודלים בתלת-ממד עם מודלים כמו GPT Image, Nano Banana, Seedream, FLUX, Seedance, Kling ו-Veo, לבדוק את יתרת הקרדיטים ולקרוא את התוצאות. התוצאות נשמרות בפרויקט בחשבון Sunra של המשתמש. כל משתמש מתחבר לחשבון Sunra שלו דרך הדפדפן. Sunra מציג קודם את העלות של כל יצירה, ומשתמש בקרדיטים של החשבון הזה רק אחרי אישור.",
+  "marketplace.plugin.sunra.app":
+    "יצירת תמונות, סרטונים, אודיו ותלת-ממד, קרדיטים ותוצאות, דרך שרת MCP של Sunra עם התחברות בדפדפן.",
+  "marketplace.plugin.sunra.prompt.balance": "כמה קרדיטים של Sunra יש לי?",
+  "marketplace.plugin.sunra.prompt.poster": "צור ב-Sunra פוסטר של שוק לילה בגשם, בפורמט לאורך.",
+  "marketplace.plugin.sunra.prompt.clip": "צור ב-Sunra סרטון של 5 שניות של סירת נייר על נהר. תגיד לי קודם כמה זה עולה.",
   "marketplace.plugin.elevenlabs.tagline": "דיבור, קולות וסוכני קול",
   "marketplace.plugin.elevenlabs.description":
     "ElevenLabs מאפשר לסוכנים להפוך טקסט לדיבור, לעבוד עם קולות וליצור, לבדוק ולסקור סוכני קול של ElevenLabs ואת השיחות שלהם. האודיו שנוצר חוזר כקישור הורדה לזמן קצר. כל משתמש מתחבר לחשבון ElevenLabs שלו דרך הדפדפן, וכל יצירה משתמשת בקרדיטים של החשבון הזה.",
@@ -344,8 +384,7 @@ export const messages = {
   "marketplace.plugin.obsidian.prompt.recall": "מה ההערות שלי אומרות על ההחלטות בפרויקט הזה?",
   "marketplace.plugin.obsidian.prompt.save": "שמור את ההחלטה הזו כהערה חדשה בכספת שלי.",
   "marketplace.plugin.obsidian.prompt.log": "הוסף סיכום של עבודת היום להערה Work log שלי.",
-  "marketplace.plugin.obsidian.hint.apiKey":
-    'ב-Obsidian, יש לפתוח Settings > Local REST API. יש להעתיק את מפתח ה-API ולהפעיל את "Enable non-encrypted (HTTP) server".',
+  "marketplace.plugin.obsidian.hint.apiKey": "ב-Obsidian, יש לפתוח Settings > Local REST API ולהעתיק את מפתח ה-API.",
   "marketplace.plugin.resend.tagline": "אימייל טרנזקציוני",
   "marketplace.plugin.resend.description":
     "Resend מאפשר לסוכנים לשלוח אימייל טרנזקציוני ולבדוק מסירה דרך API אחד. מפתח API מלוח הבקרה של Resend מועבר לשרת המקומי כמשתנה סביבה אחד.",
@@ -355,20 +394,37 @@ export const messages = {
   "marketplace.plugin.resend.prompt.template": "נסח אימייל לאיפוס סיסמה עבור התהליך החדש.",
   "marketplace.plugin.omnisend.tagline": "שיווק באימייל וב-SMS",
   "marketplace.plugin.omnisend.description":
-    "Omnisend מאפשר לסוכנים לקרוא דוחות קמפיינים וטפסים, למצוא אנשי קשר ופלחים וליצור ולערוך קמפיינים, אוטומציות, תבניות אימייל, טפסים ומוצרים. כל משתמש מתחבר לחשבון Omnisend שלו דרך הדפדפן ובוחר את רמת הגישה במסך ההסכמה. עם גישת כתיבה סוכנים יכולים גם לשלוח קמפיינים ולמחוק נתונים. יש לבחור גישה לקריאה בלבד כשהסוכנים צריכים רק דוחות.",
+    "Omnisend מאפשר לסוכנים לקרוא דוחות קמפיינים וטפסים, למצוא אנשי קשר ופלחים וליצור ולערוך קמפיינים, אוטומציות, תבניות אימייל, טפסים ומוצרים. כל משתמש מתחבר עם מפתח API מחשבון Omnisend שלו. סוכנים יכולים לעשות את מה שהמפתח מתיר, כולל שליחת קמפיינים ומחיקת נתונים.",
   "marketplace.plugin.omnisend.app":
-    "קמפיינים, אוטומציות, אנשי קשר, פלחים, טפסים ודוחות, דרך שרת MCP של Omnisend עם התחברות בדפדפן.",
+    "קמפיינים, אוטומציות, אנשי קשר, פלחים, טפסים ודוחות, דרך שרת MCP של Omnisend עם מפתח API.",
   "marketplace.plugin.omnisend.prompt.lastCampaign": "איך הקמפיינים של השבוע שעבר הצליחו בהשוואה לשבוע שלפניו?",
   "marketplace.plugin.omnisend.prompt.segment": "כמה אנשי קשר יש בפלח VIP, ואיך זה השתנה החודש?",
   "marketplace.plugin.omnisend.prompt.draftCampaign": "נסח קמפיין לקולקציה החדשה, אבל אל תשלח אותו.",
-  "marketplace.plugin.composio.tagline": "אפליקציות רבות דרך הקישור שלך ל-Composio",
+  "marketplace.plugin.postiz.tagline": "תזמון פוסטים ברשתות חברתיות",
+  "marketplace.plugin.omnisend.hint.apiKey": "ב-Omnisend, יש לפתוח את Store settings > API keys וליצור מפתח.",
+  "marketplace.plugin.postiz.description":
+    "Postiz מאפשר לסוכנים להציג את ערוצי הרשתות החברתיות שלך, ולכתוב טיוטות, לתזמן ולפרסם פוסטים ביותר מ-30 רשתות, כמו X,‏ LinkedIn,‏ Instagram ו-TikTok. סוכנים יכולים גם להעלות מדיה וליצור תמונות וסרטונים בבינה מלאכותית. התחבר לחשבון Postiz שלך בדפדפן, או הדבק את מפתח ה-API מ-Settings › Developers ב-Postiz. כל תוכניות הענן של Postiz כוללות גישה ל-API. סוכנים יכולים לפרסם פוסט מיד, לכן בדוק כל פוסט לפני שתאשר אותו.",
+  "marketplace.plugin.postiz.app":
+    "ערוצים, טיוטות, פוסטים מתוזמנים ומדיה, דרך שרת ה-MCP של Postiz עם התחברות בדפדפן או מפתח API.",
+  "marketplace.plugin.postiz.prompt.channels": "אילו ערוצי רשתות חברתיות מחוברים ל-Postiz?",
+  "marketplace.plugin.postiz.prompt.week": "אילו פוסטים מתוזמנים לשבוע הבא?",
+  "marketplace.plugin.postiz.prompt.draft": "כתוב טיוטת פוסט ל-LinkedIn על הגרסה החדשה שלנו, אבל אל תתזמן אותו.",
+  "marketplace.plugin.trypost.tagline": "תזמון רשתות חברתיות",
+  "marketplace.plugin.trypost.description":
+    "TryPost מאפשר לסוכנים להציג את הערוצים המחוברים שלך, ולנסח, לתזמן, להוסיף לתור ולפרסם פוסטים ב-X, LinkedIn, Instagram, Facebook, TikTok, YouTube, Threads, Bluesky, Mastodon, Pinterest ועוד. הסוכנים יכולים גם לקרוא נתוני ניתוח, לנהל רעיונות ואישורים ולהגדיר זמני פרסום. התחבר לחשבון TryPost שלך דרך הדפדפן ובחר סביבת עבודה. סוכנים יכולים לפרסם פוסט מיד, לכן בדוק כל פוסט לפני שאתה מאשר אותו.",
+  "marketplace.plugin.trypost.app":
+    "ערוצים, פוסטים, תור, רעיונות וניתוח נתונים, דרך שרת ה-MCP של TryPost עם התחברות בדפדפן.",
+  "marketplace.plugin.trypost.prompt.week": "אילו פוסטים מתוזמנים לשבוע הזה?",
+  "marketplace.plugin.trypost.prompt.draft": "נסח פוסט ל-LinkedIn על הגרסה החדשה שלנו, אבל אל תתזמן אותו.",
+  "marketplace.plugin.trypost.prompt.analytics": "אילו מהפוסטים שלי מהחודש שעבר קיבלו הכי הרבה מעורבות?",
+  "marketplace.plugin.composio.tagline": "Gmail, Slack, GitHub ועוד יותר מ-1,000 אפליקציות",
   "marketplace.plugin.composio.description":
-    "Composio מחבר סוכנים ל-Gmail, Slack, GitHub ולמאות אפליקציות אחרות דרך שרת MCP אחד. יש לחבר את האפליקציות הרצויות בחשבון Composio שלך, ואז להדביק כאן את כתובת ה-MCP שלו ואת מפתח ה-API.",
-  "marketplace.plugin.composio.app": "האפליקציות שאתה מוסיף לשרת MCP שלך ב-Composio, דרך הקישור מחשבון Composio שלך.",
+    "Composio מחבר את הסוכנים שלך ל-Gmail, Slack, GitHub ולעוד יותר מ-1,000 אפליקציות אחרות דרך שרת MCP אחד. יש להתחבר עם חשבון Composio שלך. כשסוכן צריך אפליקציה, הוא מבקש ממך לחבר אותה.",
+  "marketplace.plugin.composio.app":
+    "האפליקציות שחיברת בחשבון Composio שלך. סוכן מבקש ממך לחבר אפליקציה כשהוא צריך אותה.",
   "marketplace.plugin.composio.prompt.inbox": "סכם את האימיילים שלא נקראו וצור טיוטות תשובה לדחופים.",
   "marketplace.plugin.composio.prompt.handoff": "פרסם סיכום של בקשת המשיכה הזו בערוץ הצוות שלנו.",
   "marketplace.plugin.composio.prompt.apps": "באילו אפליקציות ופעולות אתה יכול להשתמש דרך Composio?",
-  "marketplace.plugin.composio.hint.url": "כתובת שרת MCP בחשבון Composio שלך",
   "marketplace.plugin.composio.hint.apiKey": "אפשר למצוא אותו בחשבון Composio שלך, ב-Settings > Sessions & API Key.",
   "marketplace.plugin.neon.tagline": "פרויקטי Postgres, ענפים ומיגרציות",
   "marketplace.plugin.neon.description":
@@ -469,7 +525,6 @@ export const messages = {
   "marketplace.plugin.huggingface.prompt.dataset": "מצא מערך נתונים של סדרות זמן של מזג אוויר והצג את העמודות שלו.",
   "marketplace.auth.apiKey": "מפתח API",
   "marketplace.auth.personalApiKey": "מפתח API אישי",
-  "marketplace.auth.mcpUrl": "כתובת MCP",
   "marketplace.auth.createKey": "יצירת מפתח",
 
   "marketplace.skill.doc": "SKILL.md",
@@ -505,6 +560,13 @@ export const messages = {
   "marketplace.skills.origin.local": "נוצרה במחשב הזה",
   "marketplace.skills.origin.workspace": "בתיקיית הסוכן הזה",
   "marketplace.skills.origin.marketplace": "מהחנות · גרסה {version}",
+  "marketplace.skills.origin.github": "מ-GitHub · {repository}",
+  "marketplace.skills.github.search": "חיפוש, או הדבקת קישור GitHub",
+  "marketplace.skills.github.reading": "מחפש מיומנויות במאגר",
+  "marketplace.skills.github.trust": "OpenBot לא בדק מיומנויות מ-GitHub. יש לקרוא מיומנות לפני שמוסיפים אותה.",
+  "marketplace.skills.github.source": "GitHub · {repository} ב-{commit}",
+  "marketplace.skills.github.open": "GitHub",
+  "marketplace.skills.github.openName": "פתיחת {repository} ב-GitHub",
   "marketplace.skills.status.notAdded": "לא נוספה",
   "marketplace.skills.status.on": "פעילה אצל {agents}",
   "marketplace.skills.agentCount": { one: "סוכן אחד", two: "שני סוכנים", other: "{count} סוכנים" },
@@ -571,6 +633,7 @@ export const messages = {
   "marketplace.error.installOnHost":
     "יש להתקין את {name} במחשב שמריץ את הסוכנים האלה: האפליקציה שלו דורשת התחברות בדפדפן.",
   "marketplace.error.appInvalid": "לא ניתן להוסיף את {name}: {reason}",
+  "marketplace.error.appNotConnected": "לא ניתן לחבר את {name}: {reason}",
   "marketplace.error.uninstallNoServer": "יש לבחור שרת מקומי כדי להסיר תוסף.",
   "marketplace.error.uninstallPartial": "לא ניתן היה להסיר חלק מ-{name}. {failures}",
   "marketplace.error.actionFailed": "לא ניתן להשלים את פעולת החנות. יש לנסות שוב.",

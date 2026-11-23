@@ -7,6 +7,8 @@ export const messages = {
   "queue.attachment": "مرفق",
   "queue.hold.named": "في الانتظار - {name} يعمل في {channel}",
   "queue.hold.unnamed": "في الانتظار - هذا الوكيل يعمل في {channel}",
+  "queue.hold.providerRestart": "في الانتظار - يُعاد تشغيل {provider} بعد انتهاء مهامه الجارية",
+  "queue.hold.signIn": "في الانتظار - يحتاج {provider} إلى تسجيل الدخول",
   "queue.item.label": "الرسالة المنتظرة {position}: {preview}",
   "queue.item.labelEditing": "الرسالة المنتظرة {position}، قيد التعديل: {preview}",
   "queue.item.editing": "قيد التعديل",
@@ -21,6 +23,7 @@ export const messages = {
   "queue.item.steerFallback.providerUnsupported":
     "لا يستطيع هذا المزوّد توجيه دور قيد التشغيل، لذا تنتظر الرسالة في قائمة الانتظار.",
   "queue.item.steerFallback.steerFailed": "لم ينجح التوجيه، لذا تنتظر الرسالة في قائمة الانتظار.",
+  "queue.item.steerFallback.routineRun": "تعمل مهمة دورية الآن، لذا تنتظر الرسالة في قائمة الانتظار.",
   "queue.item.runAsTask": "تشغيل في سلسلة جديدة",
   "queue.item.runAsTaskLabel": "تشغيل الرسالة المنتظرة {position} في سلسلة جديدة",
   "queue.item.deleteLabel": "حذف الرسالة المنتظرة {position}",

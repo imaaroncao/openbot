@@ -1,9 +1,3 @@
-// The GitHub App that the built-in GitHub connection signs in to.
-//
-// `bun scripts/create-github-app.ts` creates the app and prints its Client ID. A Client ID is
-// public: device flow and refresh need nothing else, and the client secret never ships.
-
-/** The GitHub App "OpenBotGit" of `nightly-labs`. With no Client ID, the connection is not offered. */
 // Self-hosted fork: no vendor app. Its webhook goes to signal.openbot.run and the vendor holds its
 // private key; the user's own app comes from OPENBOT_GITHUB_CLIENT_ID (src/main/self-host/bootstrap.ts).
 const GITHUB_APP_CLIENT_ID = "";
@@ -14,7 +8,6 @@ export interface GitHubAppConfig {
   slug: string;
 }
 
-/** The configured app, or null. `OPENBOT_GITHUB_CLIENT_ID` and `OPENBOT_GITHUB_APP_SLUG` override it. */
 export function githubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHubAppConfig | null {
   const clientId = env.OPENBOT_GITHUB_CLIENT_ID?.trim() || GITHUB_APP_CLIENT_ID;
   const slug = env.OPENBOT_GITHUB_APP_SLUG?.trim() || GITHUB_APP_SLUG;

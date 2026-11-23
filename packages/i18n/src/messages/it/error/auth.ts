@@ -4,6 +4,7 @@ import type { messages as source } from "../../en/error/auth";
 export const messages = {
   "error.auth.serviceUnavailable":
     "OpenBot non è riuscito a raggiungere il servizio account. Controlla che l'API sia in esecuzione, poi riprova.",
+  "error.auth.sessionTimeout": "OpenBot non ha risposto in tempo. Controlla la connessione a internet, poi riprova.",
   "error.auth.networkBlocked":
     "Un firewall o un proxy di questa rete ha impedito a OpenBot di raggiungere {host}. Chiedi all'amministratore di rete di consentire {host}, poi riprova.",
   "error.auth.signInFirst": "Accedi prima a OpenBot.",
@@ -19,6 +20,7 @@ export const messages = {
   "error.auth.serviceTimeout": "Il servizio account non ha risposto in tempo. Riprova.",
   "error.auth.serviceStatus": "Il servizio account ha restituito un errore ({status}). Riprova più tardi.",
   "error.auth.invalidHostedServer": "Il servizio account ha restituito un server ospitato non valido.",
+  "error.auth.invalidServerClaim": "Il servizio account ha restituito un codice server non valido.",
   "error.auth.codeNotSent": "OpenBot non è riuscito a inviare il codice di accesso.",
   "error.auth.deliveryTimeout":
     "OpenBot non ha potuto confermare la consegna in tempo. Il codice potrebbe comunque arrivare: controlla la consegna prima di inviarlo di nuovo.",

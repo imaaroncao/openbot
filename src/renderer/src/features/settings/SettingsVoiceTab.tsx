@@ -21,13 +21,16 @@ import {
   type SpeechSpeed,
   type SpeechVoice,
   VOICE_MODELS,
+  VOICE_TURN_PAUSES,
   type VoiceLanguage,
   type VoiceModelId,
   type VoiceModelInfo,
+  type VoiceTurnPause,
   WHISPER_LANGUAGES,
   type WhisperLanguage,
   XAI_SPEECH_VOICES,
 } from "@openbot/contracts/ipc";
+import { shortVoiceServerModel, voiceServerHost } from "@openbot/contracts/voice-server";
 import type { AppTextKey } from "@openbot/i18n";
 import {
   Button,
@@ -47,11 +50,15 @@ import {
   Square,
   SwitchField,
 } from "@openbot/ui";
+import { TalkKeyRecorder } from "@openbot/ui/features/settings/TalkKeyRecorder";
 import { useText } from "@openbot/ui/text";
 import { createMemo, createSignal, Show } from "solid-js";
+import { setVoiceTalkKey, useVoiceTalkKey } from "../conversation/voice-talk-key";
 import type { CodexLiveAccess } from "../speech/codex-live-access";
+import { type LiveVoiceAccountChoice, LiveVoiceAccountRow } from "./LiveVoiceAccountRow";
 import type { SettingsVoiceStore } from "./settings-voice-store";
 import {
+  MODEL_DESCRIPTION,
   type ModelChoice,
   type ModelDownload,
   ModelDownloadToasts,
@@ -59,51 +66,35 @@ import {
   VoiceKeyRow,
   VoiceModelRow,
 } from "./VoiceModelRow";
-import { shortModel, VoiceServerDialog, voiceServerHost } from "./VoiceServerDialog";
-
-const MODEL_DESCRIPTION = {
-  "parakeet-tdt-0.6b-v3": "settings.voice.model.parakeet.description",
-  "parakeet-unified-en-0.6b": "settings.voice.model.parakeetUnified.description",
-  "bark-3.0-plus": "settings.voice.model.bark.description",
-  "whisper-turbo": "settings.voice.model.whisper.description",
-  "cohere-transcribe-03-2026": "settings.voice.model.cohere.description",
-  [ELEVENLABS_VOICE_MODEL_ID]: "settings.voice.model.elevenlabs.description",
-  "groq-whisper-large-v3-turbo": "settings.voice.model.groqTurbo.description",
-  "groq-whisper-large-v3": "settings.voice.model.groqLarge.description",
-} as const satisfies Record<VoiceModelInfo["id"], AppTextKey>;
+import { VoiceServerDialog } from "./VoiceServerDialog";
 
 const SPEECH_MODEL_DESCRIPTION = {
   [SPEECH_MODEL_ID]: "settings.voice.speech.model.description",
   "elevenlabs-flash-v2.5": "settings.voice.speech.model.flash.description",
   "elevenlabs-multilingual-v2": "settings.voice.speech.model.multilingual.description",
   "elevenlabs-v3": "settings.voice.speech.model.v3.description",
+  "elevenlabs-v4-turbo": "settings.voice.speech.model.v4Turbo.description",
+  "elevenlabs-v4": "settings.voice.speech.model.v4.description",
   "xai-tts": "settings.voice.speech.model.xai.description",
 } as const satisfies Record<SpeechModelId, AppTextKey>;
 
-/** Supertonic first, then the cloud models by provider. */
 const SPEECH_CHOICES: readonly ModelChoice<SpeechModelId>[] = [
   { id: SPEECH_MODEL_ID, name: SPEECH_MODEL.name, place: "local" },
   ...CLOUD_SPEECH_MODELS.map((model) => ({ id: model.id, name: model.name, place: model.provider })),
 ];
 
-/**
- * The voices of each speech model place. The arrays stay the same objects: a new array makes the
- * Select send its value again, and that write starts the same change again.
- */
 const VOICE_OPTIONS: Record<"local" | SpeechKeyProvider, string[]> = {
   local: [...SPEECH_VOICES],
   elevenlabs: [...ELEVENLABS_SPEECH_VOICES],
   xai: [...XAI_SPEECH_VOICES],
 };
 
-/** The language that the model uses, and why it cannot be set, for each model that takes no language. */
 const FIXED_LANGUAGE: Partial<Record<VoiceModelInfo["id"], { language: VoiceLanguage; description: AppTextKey }>> = {
   "parakeet-tdt-0.6b-v3": { language: AUTOMATIC_VOICE_LANGUAGE, description: "settings.voice.language.modelDetects" },
   "parakeet-unified-en-0.6b": { language: "en", description: "settings.voice.language.parakeetUnifiedEnglishOnly" },
   "bark-3.0-plus": { language: "en", description: "settings.voice.language.englishOnly" },
 };
 
-/** `jw` is Whisper's code for Javanese, whose catalog name is under `jv`. */
 const LANGUAGE_NAME = {
   af: "language.name.af",
   am: "language.name.am",
@@ -181,35 +172,32 @@ const LANGUAGE_NAME = {
   zh: "language.name.zh",
 } as const satisfies Record<WhisperLanguage, AppTextKey>;
 
-/** The country of a language's flag: the likely region of the language, as `Intl.Locale` gives it. */
 function flagFor(language: VoiceLanguage): string {
   if (language === AUTOMATIC_VOICE_LANGUAGE) return "🌐";
   try {
     const region = new Intl.Locale(language === "jw" ? "jv" : language).maximize().region;
     if (region && /^[A-Z]{2}$/u.test(region))
       return String.fromCodePoint(...[...region].map((letter) => 0x1f1e6 + letter.charCodeAt(0) - 65));
-  } catch {
-    // A tag the engine does not know shows no flag.
-  }
+  } catch {}
   return "🌐";
 }
 
-/** `automatic` lets OpenAI choose the voice of live voice. */
 type LiveVoiceChoice = CodexLiveVoice | "automatic";
 
 interface SettingsVoiceTabProps {
   store: SettingsVoiceStore;
   selectMount: HTMLElement | undefined;
   codexLiveAccess?: CodexLiveAccess | undefined;
-  /** Opens the Providers section of this computer, where Codex signs in. */
   onConnectCodex?: (() => void) | undefined;
+  liveVoiceAccount?: LiveVoiceAccountChoice | undefined;
+  platform?: "darwin" | "win32" | "linux" | undefined;
 }
 
 export function SettingsVoiceTab(props: SettingsVoiceTabProps) {
   const { t, format } = useText();
+  const talkKey = useVoiceTalkKey(() => props.platform);
   const settings = () => props.store.state.settings;
   const activeModel = () => VOICE_MODELS.find((model) => model.id === settings()?.modelId);
-  /** A retired model shows only while it is in use or has files on this computer. */
   const shownModels = createMemo(() =>
     VOICE_MODELS.filter(
       (model) =>
@@ -220,19 +208,12 @@ export function SettingsVoiceTab(props: SettingsVoiceTabProps) {
     ),
   );
   const server = () => props.store.state.server;
-  /** While the user's own server takes dictation, no model on this computer is in use. */
   const serverDictates = () => server()?.routes.dictation === true;
-  /** While the user's own server reads replies, Supertonic's voices do not apply. */
   const serverSpeaks = () => server()?.routes.speech === true;
-  /** The server gets the language that the user sets, so a local model's fixed language does not apply. */
   const fixedLanguage = () => {
     const model = activeModel();
     return model && !model.supportsLanguage && !serverDictates() ? FIXED_LANGUAGE[model.id] : undefined;
   };
-  /**
-   * A model with its own languages, such as Cohere Transcribe, offers only those and no automatic.
-   * A memo, so that a save keeps the same list and the options do not change under the Select.
-   */
   const modelLanguages = createMemo(() => (serverDictates() ? undefined : activeModel()?.languages));
   const shownLanguage = (): VoiceLanguage | null => {
     const fixed = fixedLanguage();
@@ -260,24 +241,22 @@ export function SettingsVoiceTab(props: SettingsVoiceTabProps) {
   });
 
   const speech = () => props.store.state.speech;
+  const pauseName = (pause: VoiceTurnPause) =>
+    t("settings.voice.pause.seconds", { seconds: format.number(pause / 1_000) });
   const voiceName = (voice: SpeechVoice) =>
     t(voice.startsWith("F") ? "settings.voice.speech.voice.female" : "settings.voice.speech.voice.male", {
       number: voice.slice(1),
     });
 
-  /** The ElevenLabs key is one key for dictation and spoken replies. */
   const elevenLabsKeySaved = () => props.store.state.statuses[ELEVENLABS_VOICE_MODEL_ID]?.phase === "ready";
-  /** The provider of the cloud model in use, or undefined for a model on this computer. */
   const cloudProvider = (): DictationKeyProvider | undefined => {
     const model = activeModel();
     return model?.kind === "cloud" ? model.provider : undefined;
   };
-  /** A cloud model is ready when the key of its provider is saved. */
   const cloudKeySaved = () => {
     const id = settings()?.modelId;
     return id ? props.store.state.statuses[id]?.phase === "ready" : false;
   };
-  /** The ElevenLabs key also reads replies aloud, so it saves through the speech route. */
   const saveCloudKey = (provider: DictationKeyProvider, key: string) =>
     provider === "elevenlabs"
       ? props.store.saveSpeechApiKey(provider, key)
@@ -298,7 +277,6 @@ export function SettingsVoiceTab(props: SettingsVoiceTabProps) {
     return model ? t(MODEL_DESCRIPTION[model.id]) : "";
   };
   const dictationNote = () => (serverDictates() ? t("settings.voice.model.serverDictates") : undefined);
-  /** While the server takes dictation, Use gives dictation back to the chosen model. */
   const dictationAction = () => {
     const model = activeModel();
     if (!model || !serverDictates()) return undefined;
@@ -326,7 +304,6 @@ export function SettingsVoiceTab(props: SettingsVoiceTabProps) {
     const id = speechModel();
     return id ? cloudSpeechModel(id) : undefined;
   };
-  /** The status of the chosen model. Main sends the status of the model in the settings. */
   const speechStatus = () => {
     const status = speech().status;
     return status && status.modelId === speechModel() ? status : null;
@@ -342,7 +319,6 @@ export function SettingsVoiceTab(props: SettingsVoiceTabProps) {
     return id ? SPEECH_MODEL_DESCRIPTION[id] : "settings.voice.speech.model.description";
   };
 
-  /** The voices of the chosen model: Supertonic's numbered voices, or the provider's named ones. */
   const voiceOptions = (): string[] => VOICE_OPTIONS[speechCloud()?.provider ?? "local"];
   const chosenVoice = (): string | null => {
     const saved = speech().settings;
@@ -352,7 +328,6 @@ export function SettingsVoiceTab(props: SettingsVoiceTabProps) {
     if (provider === "xai") return saved.xaiVoice;
     return saved.voice;
   };
-  /** A provider voice shows its own name, which stays the same in each language. */
   const anyVoiceName = (voice: string) =>
     isSpeechVoice(voice) ? voiceName(voice) : voice.charAt(0).toUpperCase() + voice.slice(1);
   const chooseVoice = (voice: string) => {
@@ -362,7 +337,6 @@ export function SettingsVoiceTab(props: SettingsVoiceTabProps) {
     else if (isXaiSpeechVoice(voice)) props.store.setXaiVoice(voice);
   };
 
-  /** Each model file that downloads, for the download toasts. */
   const downloads = createMemo((): ModelDownload[] => {
     const local: ModelDownload[] = VOICE_MODELS.flatMap((model) => {
       const status = props.store.state.statuses[model.id];
@@ -396,7 +370,6 @@ export function SettingsVoiceTab(props: SettingsVoiceTabProps) {
   const [editingServer, setEditingServer] = createSignal(false);
 
   const liveVoice = (): LiveVoiceChoice => speech().settings?.codexLiveVoice ?? "automatic";
-  /** The voices' own names, which stay the same in each language. */
   const liveVoiceName = (voice: LiveVoiceChoice) =>
     voice === "automatic" ? t("settings.voice.language.automatic") : voice.charAt(0).toUpperCase() + voice.slice(1);
 
@@ -474,6 +447,35 @@ export function SettingsVoiceTab(props: SettingsVoiceTabProps) {
               </Select>
             </ItemActions>
           </Item>
+          <Item data-settings-row="settings.voice.pause.title" class="settings-modal-row">
+            <ItemContent>
+              <ItemTitle>{t("settings.voice.pause.title")}</ItemTitle>
+              <ItemDescription>{t("settings.voice.pause.description")}</ItemDescription>
+            </ItemContent>
+            <ItemActions>
+              <Select<VoiceTurnPause>
+                class="settings-modal-select"
+                options={[...VOICE_TURN_PAUSES]}
+                value={speech().settings?.turnPauseMs ?? null}
+                onChange={(next) => next && props.store.setTurnPause(next)}
+                disabled={!speech().settings}
+                placement="bottom-end"
+                itemComponent={(selectProps) => (
+                  <SelectItem item={selectProps.item}>{pauseName(selectProps.item.rawValue)}</SelectItem>
+                )}
+              >
+                <SelectTrigger size="sm" aria-label={t("settings.voice.pause.title")}>
+                  <SelectValue<VoiceTurnPause>>
+                    {(state) => {
+                      const pause = state.selectedOption();
+                      return pause && pauseName(pause);
+                    }}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent mount={props.selectMount} />
+              </Select>
+            </ItemActions>
+          </Item>
         </ItemGroup>
       </SettingsSection>
 
@@ -491,7 +493,6 @@ export function SettingsVoiceTab(props: SettingsVoiceTabProps) {
             disabled={!speech().settings}
             mount={props.selectMount}
           />
-          {/* Keyed: a new provider gets an empty key field, so a draft key is not saved for the other provider. */}
           <Show when={speechCloud()?.provider} keyed>
             {(provider) => (
               <VoiceKeyRow
@@ -585,6 +586,20 @@ export function SettingsVoiceTab(props: SettingsVoiceTabProps) {
         </ItemGroup>
       </SettingsSection>
 
+      <SettingsSection title={t("settings.voice.talk.section")}>
+        <ItemGroup class="settings-modal-card">
+          <Item data-settings-row="settings.voice.talkKey.title" class="settings-modal-row">
+            <ItemContent>
+              <ItemTitle>{t("settings.voice.talkKey.title")}</ItemTitle>
+              <ItemDescription>{t("settings.voice.talkKey.description")}</ItemDescription>
+            </ItemContent>
+            <ItemActions>
+              <TalkKeyRecorder binding={talkKey()} onChange={(key) => setVoiceTalkKey(key, talkKey().platform)} />
+            </ItemActions>
+          </Item>
+        </ItemGroup>
+      </SettingsSection>
+
       <SettingsSection title={t("settings.voice.live.section")}>
         <ItemGroup class="settings-modal-card">
           <Show
@@ -643,6 +658,15 @@ export function SettingsVoiceTab(props: SettingsVoiceTabProps) {
                 </Select>
               </ItemActions>
             </Item>
+            <Show when={props.liveVoiceAccount}>
+              {(choice) => (
+                <LiveVoiceAccountRow
+                  choice={choice()}
+                  disabled={!speech().settings?.codexLive}
+                  selectMount={props.selectMount}
+                />
+              )}
+            </Show>
           </Show>
         </ItemGroup>
       </SettingsSection>
@@ -675,14 +699,14 @@ export function SettingsVoiceTab(props: SettingsVoiceTabProps) {
                   <Show when={serverDictates()}>
                     <ItemDescription>
                       {t("settings.voice.server.dictationSummary", {
-                        model: shortModel(saved().routes.transcriptionModel),
+                        model: shortVoiceServerModel(saved().routes.transcriptionModel),
                       })}
                     </ItemDescription>
                   </Show>
                   <Show when={serverSpeaks()}>
                     <ItemDescription>
                       {t("settings.voice.server.speechSummary", {
-                        model: shortModel(saved().routes.speechModel),
+                        model: shortVoiceServerModel(saved().routes.speechModel),
                         voice: saved().routes.voice ?? "",
                       })}
                     </ItemDescription>

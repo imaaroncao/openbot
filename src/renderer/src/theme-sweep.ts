@@ -1,60 +1,24 @@
 import { prefersReducedMotion } from "@openbot/ui/utils";
 
-/**
- * A theme change as a soft wash of brand colors that moves across the window, as glimm does it. A
- * change from dark to light goes down from the top; other changes go up from the bottom. The old
- * theme stays on screen as the view transition's old picture. The new theme shows under the wash
- * through a mask on the new picture, and a ripple moves through the root under the wash. A WebGL canvas
- * draws the wash. It joins the transition as its own named element above the root, so it is live
- * while the pictures are still images.
- *
- * The wash front is the edge of an ellipse at the bottom (or top) middle of the window, and the masks in
- * `styles/theme-sweep.css` use the same ellipse, so the front and the mask stay together. An SVG
- * filter on the root's pictures makes the ripple on the same curve. Only the band at the front
- * moves; the rest of the interface stays in place.
- *
- * Without the View Transition API or WebGL, with reduced motion, or in a hidden window, the theme
- * changes at once.
- *
- * `beam` draws the same wash as a ring that closes in on one element or spreads out from it, to mark
- * the start of an action. It does not use a view transition, so the interface under it stays live and does not move.
- */
-
-/** The view transition type that `styles/theme-sweep.css` selects. */
 const SWEEP_TYPE = "theme-sweep";
 const SWEEP_MS = 1200;
-/** How far the wash reaches, as parts of the window height: in front of its front and after it. */
 const AHEAD = 0.14;
 const BEHIND = 0.32;
-/** The new theme starts to show `REVEAL_LAG` after the front, and is whole `REVEAL` after that. */
 const REVEAL_LAG = 0.03;
 const REVEAL = 0.14;
-/**
- * The vertical radius of the front's ellipse at the end. The front is lower at the sides of the
- * window (0.87 of the radius), and the wash after it must leave the window there too.
- */
 const END_RADIUS = (1 + BEHIND * 2) / 0.86;
-/** The SVG filter that `styles/theme-sweep.css` puts on the root's pictures. */
 const RIPPLE_ID = "theme-sweep-ripple";
-/** The crest's width, as a part of the window height. */
 const CREST = 0.09;
-/** At the crest the pictures move this far ahead, in CSS pixels; in the trough after it, back. */
 const PUSH = 22;
 const PULL = 8;
-/** At the sides of the window the move is this many times the move at the middle. */
 const EDGE_GAIN = 2.2;
-/** The blur after the crest, and the color split at it, in CSS pixels. */
 const BLUR = 9;
-const SPLIT = 2;
-/** The ripple's extent, in crest widths from the front: ahead of it, and after it. */
+const CHANNEL_SPREAD = 0.08;
 const RIPPLE_AHEAD = 4;
 const RIPPLE_BEHIND = 6;
-/** How much lower the front is at the sides of the window than at the middle, as a part of the radius. */
 const ARCH_DROP = 1 - Math.sqrt(0.75);
-/** The farthest the arch reads the ripple's images, in window heights, with a small margin. */
 const ARCH_REACH = Math.ceil(ARCH_DROP * END_RADIUS * 100) / 100 + 0.02;
 
-/** An SVG image of one gradient, stretched over the filter primitive's box. */
 function gradientImage(vertical: boolean, stops: string[]): string {
   const size = vertical ? "x2='0' y2='1'" : "x2='1' y2='0'";
   return `data:image/svg+xml,${encodeURIComponent(
@@ -64,28 +28,17 @@ function gradientImage(vertical: boolean, stops: string[]): string {
   )}`;
 }
 
-/**
- * One gradient stop, from 0 to 1 as opacity. The filter reads the opacity as a number. The color is
- * not safe for that, because the display's color profile changes it, so every stop is black.
- */
 function stop(offset: number, value: number): string {
   return `<stop offset='${offset.toFixed(4)}' stop-opacity='${Math.min(1, Math.max(0, value)).toFixed(4)}'/>`;
 }
 
-/** The ripple's images are this many window heights tall, with the front at their middle. */
 const RIPPLE_SPAN = 4;
-/** The thickness of each image strip, in pixels. */
 const STRIP = 4;
 
-/**
- * Stops along the ripple, from ahead of the front to after it, in crest widths `u`. Ahead is up, or
- * down for a sweep that goes down.
- */
 function rippleImage(value: (u: number) => number, outside: number, down: boolean): string {
   const steps = Array.from({ length: 61 }, (_, index) => RIPPLE_AHEAD - (index / 60) * (RIPPLE_AHEAD + RIPPLE_BEHIND));
   const ahead = down ? 1 : -1;
   const stops = steps.map((u) => ({ offset: 0.5 + (ahead * u * CREST) / RIPPLE_SPAN, value: value(u) }));
-  // Gradient stops must go from top to bottom.
   if (down) stops.reverse();
   return gradientImage(true, [
     stop(0, outside),
@@ -94,31 +47,21 @@ function rippleImage(value: (u: number) => number, outside: number, down: boolea
   ]);
 }
 
-/** The move: above one half moves the pictures ahead, below one half back. */
 function rippleMove(u: number): number {
   const crest = Math.exp(-u * u);
   const trough = Math.exp(-(((u + 2.6) / 1.4) ** 2));
   return 0.5 + (0.5 * (crest * PUSH - trough * PULL)) / PUSH;
 }
 
-/** The blur. It is strongest just after the crest. */
 function rippleBlur(u: number): number {
   return Math.exp(-(((u * 0.5 + 0.2) / 0.9) ** 2));
 }
 
-/** The move and blur images, for a sweep that goes up and for one that goes down. */
 const RIPPLE_IMAGES = {
   up: [rippleImage(rippleMove, 0.5, false), rippleImage(rippleBlur, 0, false)],
   down: [rippleImage(rippleMove, 0.5, true), rippleImage(rippleBlur, 0, true)],
 } as const;
 
-/**
- * The arch, across the window: one at the middle and one half at the sides. The images are placed
- * at the front's height at the sides, and the arch moves them toward the ellipse's center at the
- * middle, so the ripple follows the front's curve. The bend also moves the images across by the same
- * amount, which does not change them. Because the bend is zero at the sides, it never reads past the
- * filter's left or right edge, where the images are empty.
- */
 const RIPPLE_ARCH = gradientImage(
   false,
   Array.from({ length: 41 }, (_, index) => {
@@ -128,12 +71,10 @@ const RIPPLE_ARCH = gradientImage(
   }),
 );
 
-/** The move's strength across the window: zero at the middle and one at the sides. */
 const RIPPLE_EDGE = gradientImage(
   false,
   Array.from({ length: 41 }, (_, index) => stop(index / 40, (index / 20 - 1) ** 2)),
 );
-/** The canvas draws at most this many device pixels for each CSS pixel. The wash is soft. */
 const MAX_PIXEL_RATIO = 1;
 
 const VERTEX_SHADER = `
@@ -157,12 +98,10 @@ uniform float u_alpha;
 const float AHEAD = ${AHEAD.toFixed(3)};
 const float BEHIND = ${BEHIND.toFixed(3)};
 
-// The spectrum: a cosine palette whose hue goes once around the color wheel for each whole step of t.
 vec3 spectrum(float t) {
   return vec3(0.74, 0.72, 0.76) + vec3(0.5, 0.52, 0.48) * cos(6.28318 * (t + vec3(0.92, 0.25, 0.58)));
 }
 
-// Each color is mixed with its neighbors, so the hues flow into each other instead of making lanes.
 vec3 washColor(float t) {
   return spectrum(t) * 0.5 + spectrum(t - 0.18) * 0.25 + spectrum(t + 0.18) * 0.25;
 }
@@ -170,23 +109,17 @@ vec3 washColor(float t) {
 void main() {
   vec2 uv = gl_FragCoord.xy / u_resolution;
   float t = u_time;
-  // Distance from the front in window heights: in front of it above zero, after it below.
   float s;
-  // The ring's colors also change around it.
   float around = 0.0;
   if (u_circle > 0.5) {
-    // A ring around the origin. Its front breathes around the circle as it grows.
     vec2 p = (gl_FragCoord.xy - u_origin) / u_resolution.y;
     float angle = atan(p.y, p.x);
     float ring = u_radius * (1.0 + 0.08 * sin(angle * 5.0 - t * 3.2) + 0.04 * sin(angle * 11.0 + t * 4.1)
       + 0.02 * sin(angle * 23.0 - t * 5.3));
     s = length(p) - ring;
-    // Near the origin the angle changes fast, so the colors around it fade out there: they would make spokes.
     around = 0.3 * smoothstep(0.05, 0.4, u_radius) * sin(angle * 3.0 + t * 1.5);
   } else {
-    // The ellipse's center is at the bottom, or at the top for a sweep that goes down.
     if (u_down > 0.5) uv.y = 1.0 - uv.y;
-    // The front bends and breathes as it rises.
     float x = uv.x - 0.5 + 0.05 * sin(uv.y * 6.0 + t * 2.5) + 0.02 * sin(uv.y * 13.0 - t * 3.6);
     float radius = u_radius * (1.0 + 0.08 * sin(uv.x * 7.0 - t * 3.2) + 0.04 * sin(uv.x * 15.0 + t * 4.1)
       + 0.02 * sin(uv.x * 29.0 - t * 5.3));
@@ -196,7 +129,6 @@ void main() {
   float reach = (s > 0.0 ? AHEAD : BEHIND) * u_spread;
   float alpha = exp(-(s * s) / (reach * reach)) * u_alpha;
 
-  // The front shows the later colors, so the wash changes color as it climbs.
   vec2 warp = uv + 0.08 * vec2(sin(uv.y * 5.0 + t * 1.7), sin(uv.x * 6.0 - t * 2.1));
   float hue = u_progress * 0.75 + s * 0.9 + around + 0.1 * sin(warp.x * 7.0 + warp.y * 4.0 + t * 2.0);
   vec3 color = clamp(washColor(hue), 0.0, 1.0);
@@ -207,7 +139,6 @@ void main() {
 interface Band {
   canvas: HTMLCanvasElement;
   setDown(down: boolean): void;
-  /** Makes the wash a ring around a point in CSS pixels, `spread` times as wide as the sweep's wash. */
   setCircle(x: number, y: number, spread: number): void;
   draw(radius: number, progress: number, seconds: number, alpha: number): void;
   dispose(): void;
@@ -223,7 +154,6 @@ function compile(gl: WebGLRenderingContext, type: number, source: string): WebGL
   return null;
 }
 
-/** The wash canvas, or null when this window has no WebGL. */
 function createBand(className: string): Band | null {
   const canvas = document.createElement("canvas");
   canvas.className = className;
@@ -231,7 +161,12 @@ function createBand(className: string): Band | null {
   const ratio = Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO);
   canvas.width = Math.max(1, Math.round(window.innerWidth * ratio));
   canvas.height = Math.max(1, Math.round(window.innerHeight * ratio));
-  const gl = canvas.getContext("webgl", { alpha: true, antialias: false, premultipliedAlpha: true });
+  const gl = canvas.getContext("webgl", {
+    alpha: true,
+    antialias: false,
+    premultipliedAlpha: true,
+    failIfMajorPerformanceCaveat: true,
+  });
   if (!gl) return null;
   const vertex = compile(gl, gl.VERTEX_SHADER, VERTEX_SHADER);
   const fragment = compile(gl, gl.FRAGMENT_SHADER, FRAGMENT_SHADER);
@@ -268,7 +203,6 @@ function createBand(className: string): Band | null {
     },
     setCircle(x, y, spread) {
       gl.uniform1f(circleUniform, 1);
-      // The canvas counts from its bottom left corner.
       gl.uniform2f(originUniform, x * ratio, (window.innerHeight - y) * ratio);
       gl.uniform1f(spreadUniform, spread);
     },
@@ -295,17 +229,14 @@ function smoothstep(from: number, to: number, value: number): number {
   return t * t * (3 - 2 * t);
 }
 
-/** The sweep's wash opacity. It fades in at the start. */
 function sweepAlpha(progress: number): number {
   return 0.8 * smoothstep(0, 0.12, progress);
 }
 
-/** A gradient stop at `offset` window heights from the front, as a part of the ellipse's radius. */
 function maskStop(radius: number, offset: number): string {
   return `${Math.max(0, 1 + offset / radius) * 100}%`;
 }
 
-/** The mask values that `styles/theme-sweep.css` reads, for a front at `radius`. */
 function sweepProperties(radius: number, down: boolean): Record<string, string> {
   return {
     "--theme-sweep-origin": down ? "0%" : "100%",
@@ -321,49 +252,60 @@ interface Ripple {
   draw(radius: number, progress: number): void;
 }
 
-/** An SVG element with these attributes. */
 function svgElement<K extends keyof SVGElementTagNameMap>(name: K, attributes: Record<string, string>) {
   const element = document.createElementNS("http://www.w3.org/2000/svg", name);
   for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, value);
   return element;
 }
 
-/**
- * The ripple filter, as glimm's page ripple: the pictures move ahead at the crest and back in the
- * trough after it, blur after the crest, and split their colors at it. Outside the ripple the
- * filter shows the pictures as they are, so the interface does not move there.
- */
+function colorMatrix(input: string, values: string, result: string) {
+  return svgElement("feColorMatrix", { in: input, type: "matrix", values, result });
+}
+
+function onSource(input: string, result: string) {
+  const merge = svgElement("feMerge", { result });
+  merge.append(svgElement("feMergeNode", { in: "SourceGraphic" }), svgElement("feMergeNode", { in: input }));
+  return merge;
+}
+
+function splitChannels(red: string, green: string, blue: string, result: string) {
+  const sum = (input: string, other: string, sumResult: string) =>
+    svgElement("feComposite", { in: input, in2: other, operator: "arithmetic", k2: "1", k3: "1", result: sumResult });
+  return [
+    colorMatrix(red, "1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1", `${result}Red`),
+    colorMatrix(green, "0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 1", `${result}Green`),
+    colorMatrix(blue, "0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 1", `${result}Blue`),
+    sum(`${result}Red`, `${result}Green`, `${result}RedGreen`),
+    sum(`${result}RedGreen`, `${result}Blue`, `${result}Opaque`),
+    svgElement("feComposite", { in: `${result}Opaque`, in2: "SourceGraphic", operator: "in", result }),
+  ];
+}
+
+function channelHalves(move: number): [number, number, number] {
+  return [Math.round(move * (1 + CHANNEL_SPREAD)), Math.round(move), Math.round(move * (1 - CHANNEL_SPREAD))];
+}
+
 function createRipple(): Ripple {
-  const matrix = (input: string, values: string, result: string) =>
-    svgElement("feColorMatrix", { in: input, type: "matrix", values, result });
   const composite = (input: string, mask: string, result: string) =>
     svgElement("feComposite", { in: input, in2: mask, operator: "in", result });
   const element = svgElement("svg", { class: "theme-sweep-ripple", "aria-hidden": "true", width: "0", height: "0" });
   const filter = svgElement("filter", {
     id: RIPPLE_ID,
-    // Each step's result is cut to this region. At the middle the arch reads the ripple's images
-    // past the window's far edge, by up to ARCH_DROP times END_RADIUS window heights, so they must
-    // exist there too. The move takes the pictures to the left before it puts them back.
     x: "-0.1",
     y: "0",
     width: "1.2",
     height: String(1 + ARCH_REACH),
     "color-interpolation-filters": "sRGB",
   });
-  // Each image changes in one direction only. A thin strip of it repeats across the window, because
-  // the filter's time grows with the area of its images.
   const image = (href: string, result: string) =>
     svgElement("feImage", { href, preserveAspectRatio: "none", x: "0", y: "0", result: `${result}Strip` });
   const tile = (result: string) => svgElement("feTile", { in: `${result}Strip`, result });
-  // The images are the same across the window, so the bend can move them across too.
   const bend = (input: string, result: string) =>
     svgElement("feDisplacementMap", { in: input, in2: "arch", xChannelSelector: "A", yChannelSelector: "A", result });
   const images = [image(RIPPLE_IMAGES.up[0], "moveImage"), image(RIPPLE_IMAGES.up[1], "blurImage")];
   let ahead = -1;
   const arch = image(RIPPLE_ARCH, "arch");
   const edge = image(RIPPLE_EDGE, "edge");
-  // The ripple's distance from one half, times the strength across the window, which goes from
-  // 1 / EDGE_GAIN at the middle to 1 at the sides.
   const middle = 1 / EDGE_GAIN;
   const edgeMove = svgElement("feComposite", {
     in: "ripple",
@@ -377,25 +319,20 @@ function createRipple(): Ripple {
   });
   const bends = [bend("moveImage", "ripple"), bend("blurImage", "blurBand")];
 
-  // The display's color profile changes a map's colors before the move reads them, but not its
-  // opacity or white. So the move reads the opacity for up and down, and white for across. White
-  // moves the pictures half the scale to the left, and the offset after it puts them back.
-  const moved = svgElement("feDisplacementMap", {
-    in: "SourceGraphic",
-    in2: "map",
-    xChannelSelector: "R",
-    yChannelSelector: "A",
-    result: "movedLeft",
-  });
-  const back = svgElement("feOffset", { in: "movedLeft", dy: "0", result: "moved" });
-  const blurred = svgElement("feGaussianBlur", { in: "moved", result: "blurred" });
-  const shifted = svgElement("feOffset", { in: "moved", dx: "0", result: "shifted" });
-  // Outside the ripple the map is exactly one half, so the moved pictures are the pictures as they
-  // are. Under them, the pictures fill what the move takes in from outside the window.
+  const moves = ["movedRed", "moved", "movedBlue"].map((result) => ({
+    moved: svgElement("feDisplacementMap", {
+      in: "SourceGraphic",
+      in2: "map",
+      xChannelSelector: "R",
+      yChannelSelector: "A",
+      result: `${result}Left`,
+    }),
+    back: svgElement("feOffset", { in: `${result}Left`, dy: "0", result }),
+    page: onSource(result, `${result}Page`),
+  }));
+  const blurred = svgElement("feGaussianBlur", { in: "movedPage", result: "blurred" });
   const merge = svgElement("feMerge", {});
-  merge.append(
-    ...["SourceGraphic", "moved", "splitCrest", "blurredBand"].map((input) => svgElement("feMergeNode", { in: input })),
-  );
+  merge.append(...["split", "blurredBand"].map((input) => svgElement("feMergeNode", { in: input })));
   filter.append(
     ...images,
     tile("moveImage"),
@@ -406,24 +343,9 @@ function createRipple(): Ripple {
     tile("edge"),
     ...bends,
     edgeMove,
-    matrix("edgeRipple", "0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0", "map"),
-    moved,
-    back,
-    // The color split: red from a picture moved ahead, green and blue from the moved picture. It
-    // shows where the move is ahead, which is the crest.
-    shifted,
-    matrix("shifted", "1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0", "red"),
-    matrix("moved", "0 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 1 0", "greenBlue"),
-    svgElement("feComposite", {
-      in: "red",
-      in2: "greenBlue",
-      operator: "arithmetic",
-      k2: "1",
-      k3: "1",
-      result: "split",
-    }),
-    matrix("ripple", "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2 -1.01", "crest"),
-    composite("split", "crest", "splitCrest"),
+    colorMatrix("edgeRipple", "0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0", "map"),
+    ...moves.flatMap(({ moved, back, page }) => [moved, back, page]),
+    ...splitChannels("movedRedPage", "movedPage", "movedBluePage", "split"),
     blurred,
     composite("blurred", "blurBand", "blurredBand"),
     merge,
@@ -436,18 +358,14 @@ function createRipple(): Ripple {
 
       const hrefs = down ? RIPPLE_IMAGES.down : RIPPLE_IMAGES.up;
       for (const [index, element] of images.entries()) element.setAttribute("href", hrefs[index] ?? "");
-      // The arch reads the images on the side away from the ellipse's center.
       filter.setAttribute("y", down ? String(-ARCH_REACH) : "0");
     },
     draw(radius, progress) {
       const width = window.innerWidth;
       const height = window.innerHeight;
-      // The ripple is strongest in the middle of the sweep and fades at its start and end.
       const strength = Math.sin(Math.PI * Math.min(1, progress));
-      // The front is at `radius` from the bottom at the middle of the window, or from the top.
       const front = ahead > 0 ? height * radius : height * (1 - radius);
       const archScale = 2 * ARCH_DROP * radius * height;
-      // The front at the sides of the window, where the arch does not move the images.
       const sideFront = front - (ahead * archScale) / 2;
       for (const element of images) {
         element.setAttribute("width", String(STRIP));
@@ -459,25 +377,23 @@ function createRipple(): Ripple {
       edge.setAttribute("width", String(width));
       edge.setAttribute("height", String(STRIP));
       for (const element of bends) element.setAttribute("scale", (-ahead * archScale).toFixed(1));
-      // A whole number of pixels, so the offset back does not blur the pictures.
-      const half = -ahead * Math.round(PUSH * EDGE_GAIN * strength);
-      moved.setAttribute("scale", String(2 * half));
-      back.setAttribute("dx", String(half));
-      shifted.setAttribute("dy", (ahead * SPLIT * strength).toFixed(2));
+      const halves = channelHalves(-ahead * PUSH * EDGE_GAIN * strength);
+      for (const [index, { moved, back }] of moves.entries()) {
+        const half = halves[index] ?? 0;
+        moved.setAttribute("scale", String(2 * half));
+        back.setAttribute("dx", String(half));
+      }
       blurred.setAttribute("stdDeviation", (BLUR * strength).toFixed(2));
     },
   };
 }
 
-/** False in a hidden window or with reduced motion. */
 function canAnimate(): boolean {
   return document.visibilityState === "visible" && !prefersReducedMotion();
 }
 
-/** The sweep that is on screen, so a newer change stops its frame loop. */
 let stopCurrent: (() => void) | undefined;
 
-/** Runs `apply`, which changes the theme, behind a wash that moves across the window. */
 export function sweepTheme(apply: () => void): void {
   stopCurrent?.();
   if (typeof document.startViewTransition !== "function" || !canAnimate()) {
@@ -495,7 +411,6 @@ export function sweepTheme(apply: () => void): void {
   let frame = 0;
   let stopped = false;
   let transition: ViewTransition | undefined;
-  // A change from dark to light goes down the window, as light falls from above. Others go up.
   const before = root.dataset.openbotColorScheme;
   let down = false;
   const show = (radius: number) => {
@@ -504,7 +419,6 @@ export function sweepTheme(apply: () => void): void {
   const stop = () => {
     if (stopped) return;
     stopped = true;
-    // A newer change can stop this sweep before its transition ends. The page then shows itself at once.
     transition?.skipTransition();
     cancelAnimationFrame(frame);
     band.dispose();
@@ -520,7 +434,6 @@ export function sweepTheme(apply: () => void): void {
     types: [SWEEP_TYPE],
     update: () => {
       apply();
-      // A skipped transition still runs its update. A stopped sweep adds nothing to the page.
       if (stopped) return;
       down = before === "dark" && root.dataset.openbotColorScheme === "light";
       show(radiusAt(0));
@@ -534,8 +447,6 @@ export function sweepTheme(apply: () => void): void {
   void transition.ready
     .then(() => {
       if (stopped) return;
-      // Every picture's own animation is off, so this one keeps the transition open for the sweep,
-      // and its clock moves the masks and the wash together.
       const clock = root.animate([{ opacity: 1 }, { opacity: 1 }], {
         duration: SWEEP_MS,
         pseudoElement: "::view-transition-new(root)",
@@ -556,29 +467,29 @@ export function sweepTheme(apply: () => void): void {
   void transition.finished.finally(stop);
 }
 
-/** The SVG filter that `beam` puts on the live page while a ring is on screen. */
 const RING_RIPPLE_ID = "theme-sweep-ring-ripple";
-/** The ring ripple's crest width, as a part of the ring's radius. */
 const RING_CREST = 0.12;
-/** At the crest the page moves this far ahead of the ring, in CSS pixels, at most. */
 const RING_PUSH = 44;
-/** The size of the ring ripple's images, in pixels. They are scaled to the ring. */
 const RING_IMAGE = 256;
+const EDGE_BAND = 64;
+const EDGE_BEND = 20;
+const MAP_NEUTRAL = 128 / 255;
 
 type RingDirection = "in" | "out";
 
-/** How far the ring ripple's images reach, as parts of the ring's radius. */
 function ringReach(direction: RingDirection): number {
   return 1 + (direction === "out" ? RIPPLE_AHEAD : RIPPLE_BEHIND) * RING_CREST;
 }
 
-/**
- * Round images of the ring ripple as opacity, with the ring at the middle of their radius: the push
- * ahead, the pull back, and the blur. Each is zero at its corners, so the filter can leave the part
- * of the window outside them as it is. A canvas makes them, because an SVG gradient cannot hold the
- * ripple's shape around a circle.
- */
-function ringImages(direction: RingDirection): [string, string, string] {
+function ringStill(direction: RingDirection): number {
+  return 1 - (direction === "out" ? RIPPLE_BEHIND : RIPPLE_AHEAD) * RING_CREST;
+}
+
+const FILTER_PAD = Math.ceil(RING_PUSH * Math.max(ringReach("in"), ringReach("out")) * (1 + CHANNEL_SPREAD)) + 2;
+
+type RingImages = [across: string, down: string, band: string];
+
+function ringImages(direction: RingDirection): RingImages {
   const reach = ringReach(direction);
   const canvas = document.createElement("canvas");
   canvas.width = RING_IMAGE;
@@ -587,19 +498,18 @@ function ringImages(direction: RingDirection): [string, string, string] {
   if (!context) return ["", "", ""];
   const half = RING_IMAGE / 2;
   const images = [0, 1, 2].map(() => context.createImageData(RING_IMAGE, RING_IMAGE));
-  const [push, pull, blur] = images.map((image) => image.data);
-  if (!push || !pull || !blur) return ["", "", ""];
+  const [across, down, band] = images.map((image) => image.data);
+  if (!across || !down || !band) return ["", "", ""];
   for (let row = 0; row < RING_IMAGE; row++) {
     for (let column = 0; column < RING_IMAGE; column++) {
       const radius = (Math.hypot(column + 0.5 - half, row + 0.5 - half) / half) * reach;
-      if (radius > reach) continue;
-      // Crest widths from the ring; ahead is outward for "out" and inward for "in".
       const u = (direction === "out" ? radius - 1 : 1 - radius) / RING_CREST;
-      const move = 2 * rippleMove(u) - 1;
+      const move = radius > reach ? 0 : 2 * rippleMove(u) - 1;
       const alpha = (row * RING_IMAGE + column) * 4 + 3;
-      push[alpha] = Math.round(Math.min(1, Math.max(0, move)) * 255);
-      pull[alpha] = Math.round(Math.min(1, Math.max(0, -move)) * 255);
-      blur[alpha] = Math.round(Math.min(1, rippleBlur(u)) * 255);
+      across[alpha] = Math.round((0.5 + (0.5 * move * (column + 0.5 - half)) / half) * 255);
+      down[alpha] = Math.round((0.5 + (0.5 * move * (row + 0.5 - half)) / half) * 255);
+      if (radius > reach) continue;
+      band[alpha] = Math.round(Math.min(1, rippleBlur(u)) * 255);
     }
   }
   const urls = images.map((image) => {
@@ -609,171 +519,211 @@ function ringImages(direction: RingDirection): [string, string, string] {
   return [urls[0] ?? "", urls[1] ?? "", urls[2] ?? ""];
 }
 
-const ringImageCache = new Map<RingDirection, [string, string, string]>();
+const ringImageCache = new Map<RingDirection, RingImages>();
 
 interface RingRipple {
   element: SVGSVGElement;
   draw(radius: number, progress: number): void;
 }
 
-/**
- * The ripple around a ring, as the theme sweep's ripple: the page moves ahead at the crest and back in
- * the trough after it, and blurs after the crest. The move goes along the ring's radius. Outside the
- * ripple the filter shows the page as it is.
- */
+function edgeImage(vertical: boolean, length: number): string {
+  const band = Math.min(EDGE_BAND, length / 4) / length;
+  const steps = Array.from({ length: 9 }, (_, index) => index / 8);
+  return gradientImage(vertical, [
+    ...steps.map((t) => stop(t * band, 0.5 + 0.5 * (1 - t) ** 2)),
+    ...steps.map((t) => stop(1 - band + t * band, 0.5 - 0.5 * t ** 2)),
+  ]);
+}
+
+function ringArea(direction: RingDirection, x: number, y: number, radius: number, margin: number) {
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  const box = radius * height * ringReach(direction);
+  let left = Math.max(0, x - box);
+  let top = Math.max(0, y - box);
+  let right = Math.min(width, x + box);
+  let bottom = Math.min(height, y + box);
+  const still = Math.max(0, radius * height * ringStill(direction) - margin);
+  const across = Math.sqrt(Math.max(0, still ** 2 - Math.max(y, height - y) ** 2));
+  const down = Math.sqrt(Math.max(0, still ** 2 - Math.max(x, width - x) ** 2));
+  if (x - across <= left) left = Math.max(left, Math.min(right, x + across));
+  else if (x + across >= right) right = Math.min(right, Math.max(left, x - across));
+  if (y - down <= top) top = Math.max(top, Math.min(bottom, y + down));
+  else if (y + down >= bottom) bottom = Math.min(bottom, Math.max(top, y - down));
+  return { box, left, top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
+}
+
 function createRingRipple(direction: RingDirection, x: number, y: number): RingRipple {
   const images = ringImageCache.get(direction) ?? ringImages(direction);
   ringImageCache.set(direction, images);
-  const reach = ringReach(direction);
   const element = svgElement("svg", { class: "theme-sweep-ripple", "aria-hidden": "true", width: "0", height: "0" });
   const filter = svgElement("filter", {
     id: RING_RIPPLE_ID,
     filterUnits: "userSpaceOnUse",
-    x: "0",
-    y: "0",
     "color-interpolation-filters": "sRGB",
   });
+  const inArea: SVGElement[] = [];
+  const step = <T extends SVGElement>(primitive: T): T => {
+    inArea.push(primitive);
+    return primitive;
+  };
   const image = (href: string, result: string) => svgElement("feImage", { href, preserveAspectRatio: "none", result });
-  const round = [image(images[0], "push"), image(images[1], "pull"), image(images[2], "blurBand")];
-  // Strips that go from 0 to 1 across the ripple's box, left to right and top to bottom.
-  const across = image(gradientImage(false, [stop(0, 0), stop(1, 1)]), "acrossStrip");
-  const down = image(gradientImage(true, [stop(0, 0), stop(1, 1)]), "downStrip");
-  // The ripple as one half plus the push less the pull. Outside its images both are zero.
-  const ripple = svgElement("feComposite", {
-    in: "push",
-    in2: "pull",
-    operator: "arithmetic",
-    k2: "0.5",
-    k3: "-0.5",
-    k4: "0.5",
-    result: "ripple",
+  const round = [image(images[0], "acrossRipple"), image(images[1], "downRipple"), image(images[2], "band")];
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  const edgeAcross = image(edgeImage(false, width), "edgeAcrossStrip");
+  const edgeDown = image(edgeImage(true, height), "edgeDownStrip");
+  for (const [strip, stripWidth, stripHeight] of [
+    [edgeAcross, width, STRIP],
+    [edgeDown, STRIP, height],
+  ] as const) {
+    strip.setAttribute("x", "0");
+    strip.setAttribute("y", "0");
+    strip.setAttribute("width", String(stripWidth));
+    strip.setAttribute("height", String(stripHeight));
+  }
+  const bends = ["edgeAcross", "edgeDown"].map((input) =>
+    step(
+      svgElement("feComposite", {
+        in: input,
+        in2: "band",
+        operator: "arithmetic",
+        k4: String(MAP_NEUTRAL),
+        result: `${input}Bend`,
+      }),
+    ),
+  );
+  const map = (ripple: string, bend: string, result: string) => [
+    step(
+      svgElement("feComposite", {
+        in: ripple,
+        in2: bend,
+        operator: "arithmetic",
+        k2: "1",
+        k3: "1",
+        k4: String(-MAP_NEUTRAL),
+        result: `${result}Raw`,
+      }),
+    ),
+    step(colorMatrix(`${result}Raw`, "0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0", result)),
+  ];
+  const moves = ["movedRed", "moved", "movedBlue"].map((result) => {
+    const shiftDown = svgElement("feOffset", { in: "SourceGraphic", result: `${result}SourceShifted` });
+    const movedDown = step(
+      svgElement("feDisplacementMap", {
+        in: `${result}SourceShifted`,
+        in2: "mapDown",
+        xChannelSelector: "R",
+        yChannelSelector: "A",
+        result: `${result}Down`,
+      }),
+    );
+    const shiftAcross = svgElement("feOffset", { in: `${result}Down`, result: `${result}DownShifted` });
+    const movedAcross = step(
+      svgElement("feDisplacementMap", {
+        in: `${result}DownShifted`,
+        in2: "mapAcross",
+        xChannelSelector: "A",
+        yChannelSelector: "R",
+        result,
+      }),
+    );
+    return { shiftDown, movedDown, shiftAcross, movedAcross, page: step(onSource(result, `${result}Page`)) };
   });
-  // Each map is one half plus the ripple times the distance from the ring's center along one axis.
-  const axis = (input: string, result: string) =>
-    svgElement("feComposite", {
-      in: "ripple",
-      in2: input,
-      operator: "arithmetic",
-      k1: "2",
-      k2: "-1",
-      k3: "-1",
-      k4: "1",
-      result,
-    });
-  const white = (input: string, result: string) =>
-    svgElement("feColorMatrix", {
-      in: input,
-      type: "matrix",
-      values: "0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0",
-      result,
-    });
-  // White moves the page half the scale on the other axis, and each offset puts it back.
-  const movedDown = svgElement("feDisplacementMap", {
-    in: "SourceGraphic",
-    in2: "mapDown",
-    xChannelSelector: "R",
-    yChannelSelector: "A",
-    result: "movedDownShifted",
-  });
-  const backDown = svgElement("feOffset", { in: "movedDownShifted", result: "movedDown" });
-  const movedAcross = svgElement("feDisplacementMap", {
-    in: "movedDown",
-    in2: "mapAcross",
-    xChannelSelector: "A",
-    yChannelSelector: "R",
-    result: "movedShifted",
-  });
-  const backAcross = svgElement("feOffset", { in: "movedShifted", result: "moved" });
-  const blurred = svgElement("feGaussianBlur", { in: "moved", result: "blurred" });
+
   const merge = svgElement("feMerge", {});
-  merge.append(...["SourceGraphic", "moved", "blurredRing"].map((input) => svgElement("feMergeNode", { in: input })));
+  merge.append(...["outside", "split"].map((input) => svgElement("feMergeNode", { in: input })));
   filter.append(
     ...round,
-    across,
-    svgElement("feTile", { in: "acrossStrip", result: "across" }),
-    down,
-    svgElement("feTile", { in: "downStrip", result: "down" }),
-    ripple,
-    axis("across", "acrossRaw"),
-    axis("down", "downRaw"),
-    white("acrossRaw", "mapAcross"),
-    white("downRaw", "mapDown"),
-    movedDown,
-    backDown,
-    movedAcross,
-    backAcross,
-    blurred,
-    svgElement("feComposite", { in: "blurred", in2: "blurBand", operator: "in", result: "blurredRing" }),
+    edgeAcross,
+    svgElement("feTile", { in: "edgeAcrossStrip", result: "edgeAcross" }),
+    edgeDown,
+    svgElement("feTile", { in: "edgeDownStrip", result: "edgeDown" }),
+    ...bends,
+    ...map("acrossRipple", "edgeAcrossBend", "mapAcross"),
+    ...map("downRipple", "edgeDownBend", "mapDown"),
+    ...moves.flatMap(({ shiftDown, movedDown, shiftAcross, movedAcross, page }) => [
+      shiftDown,
+      movedDown,
+      shiftAcross,
+      movedAcross,
+      page,
+    ]),
+    ...splitChannels("movedRedPage", "movedPage", "movedBluePage", "split").map(step),
+    step(svgElement("feFlood", { "flood-opacity": "1", result: "area" })),
+    svgElement("feComposite", { in: "SourceGraphic", in2: "area", operator: "out", result: "outside" }),
     merge,
   );
   element.append(filter);
-  // Ahead is outward for "out": the page at the crest moves away from the center.
   const sign = direction === "out" ? -1 : 1;
+  const reach = ringReach(direction);
   return {
     element,
     draw(radius, progress) {
-      const width = window.innerWidth;
-      const height = window.innerHeight;
-      filter.setAttribute("width", String(width));
-      filter.setAttribute("height", String(height));
-      for (const result of [ripple]) {
-        result.setAttribute("x", "0");
-        result.setAttribute("y", "0");
-        result.setAttribute("width", String(width));
-        result.setAttribute("height", String(height));
-      }
-      const box = Math.max(1, radius * height * reach);
+      filter.setAttribute("x", String(-FILTER_PAD));
+      filter.setAttribute("y", String(-FILTER_PAD));
+      filter.setAttribute("width", String(window.innerWidth + 2 * FILTER_PAD));
+      filter.setAttribute("height", String(window.innerHeight + 2 * FILTER_PAD));
+      const strength = Math.sin(Math.PI * Math.min(1, progress));
+      const halves = channelHalves(sign * RING_PUSH * reach * strength);
+      const area = ringArea(direction, x, y, radius, 2 * Math.max(...halves.map(Math.abs)) + 2);
+      const box = Math.max(1, area.box);
       for (const element of round) {
         element.setAttribute("x", (x - box).toFixed(1));
         element.setAttribute("y", (y - box).toFixed(1));
         element.setAttribute("width", (2 * box).toFixed(1));
         element.setAttribute("height", (2 * box).toFixed(1));
       }
-      across.setAttribute("x", (x - box).toFixed(1));
-      across.setAttribute("y", "0");
-      across.setAttribute("width", (2 * box).toFixed(1));
-      across.setAttribute("height", String(STRIP));
-      down.setAttribute("x", "0");
-      down.setAttribute("y", (y - box).toFixed(1));
-      down.setAttribute("width", String(STRIP));
-      down.setAttribute("height", (2 * box).toFixed(1));
-      // The ripple is strongest in the middle of the ring's path and fades at its start and end. The
-      // axis distance is a part of the box, so the scale grows with `reach` to give RING_PUSH at the ring.
-      const strength = Math.sin(Math.PI * Math.min(1, progress));
-      // A whole number of pixels, so the offsets back do not blur the page.
-      const half = sign * Math.round(RING_PUSH * reach * strength);
-      for (const moved of [movedDown, movedAcross]) moved.setAttribute("scale", String(2 * half));
-      backDown.setAttribute("dx", String(half));
-      backAcross.setAttribute("dy", String(half));
-      blurred.setAttribute("stdDeviation", (BLUR * strength).toFixed(2));
+      for (const primitive of inArea) {
+        primitive.setAttribute("x", area.left.toFixed(1));
+        primitive.setAttribute("y", area.top.toFixed(1));
+        primitive.setAttribute("width", area.width.toFixed(1));
+        primitive.setAttribute("height", area.height.toFixed(1));
+      }
+      for (const [index, { shiftDown, movedDown, shiftAcross, movedAcross }] of moves.entries()) {
+        const half = halves[index] ?? 0;
+        movedDown.setAttribute("scale", String(2 * half));
+        movedAcross.setAttribute("scale", String(2 * half));
+        shiftDown.setAttribute("dx", String(half));
+        shiftAcross.setAttribute("dy", String(half));
+        const left = area.left + Math.min(0, half);
+        const top = area.top + Math.min(0, half);
+        shiftDown.setAttribute("x", left.toFixed(1));
+        shiftDown.setAttribute("y", area.top.toFixed(1));
+        shiftDown.setAttribute("width", (area.width + Math.abs(half)).toFixed(1));
+        shiftDown.setAttribute("height", area.height.toFixed(1));
+        shiftAcross.setAttribute("x", area.left.toFixed(1));
+        shiftAcross.setAttribute("y", top.toFixed(1));
+        shiftAcross.setAttribute("width", area.width.toFixed(1));
+        shiftAcross.setAttribute("height", (area.height + Math.abs(half)).toFixed(1));
+      }
+      const greenHalf = halves[1];
+      const bend = greenHalf ? Math.min(0.5, Math.max(-0.5, (EDGE_BEND * strength) / (2 * greenHalf))) : 0;
+      for (const element of bends) {
+        element.setAttribute("k1", String(2 * bend));
+        element.setAttribute("k3", String(-bend));
+      }
     },
   };
 }
 
 const BEAM_MS = 1400;
-/** The ring's width, as a part of the sweep's wash, and its opacity. */
+const BEAM_DEADLINE_MS = BEAM_MS * 2;
 const BEAM_SPREAD = 0.55;
 const BEAM_ALPHA = 0.7;
 
-/** The ring that is on screen, so a newer one stops its frame loop. */
 let stopBeam: (() => void) | undefined;
 
-/**
- * Draws the wash as a ring around `element`. With "in" it comes from outside the window and closes in
- * on the element; with "out" it spreads out from the element and leaves the window. Returns false when
- * no ring plays, such as with reduced motion.
- */
-export function beam(element: Element, direction: RingDirection): boolean {
+export function beam(element: Element, direction: RingDirection): Promise<void> | null {
   stopBeam?.();
-  if (!canAnimate()) return false;
+  if (!canAnimate()) return null;
   const band = createBand("theme-sweep-beam");
-  if (!band) return false;
+  if (!band) return null;
   const rect = element.getBoundingClientRect();
   const x = rect.left + rect.width / 2;
   const y = rect.top + rect.height / 2;
   const width = window.innerWidth;
   const height = window.innerHeight;
-  // The ring ends past the farthest corner, with its wash after it, and with room for its waves.
   const corner = Math.max(
     Math.hypot(x, y),
     Math.hypot(width - x, y),
@@ -785,26 +735,31 @@ export function beam(element: Element, direction: RingDirection): boolean {
   const ripple = createRingRipple(direction, x, y);
 
   let frame = 0;
-  // An inline filter, because other code (such as Storybook's vision simulator) sets the body's filter inline.
+  let end = () => {};
+  const ended = new Promise<void>((resolve) => {
+    end = resolve;
+  });
   const body = document.body.style;
   const previousFilter = [body.getPropertyValue("filter"), body.getPropertyPriority("filter")] as const;
+  let deadline = 0;
   const stop = () => {
     cancelAnimationFrame(frame);
+    window.clearTimeout(deadline);
     body.setProperty("filter", ...previousFilter);
     ripple.element.remove();
     band.dispose();
     if (stopBeam === stop) stopBeam = undefined;
+    end();
   };
   stopBeam = stop;
-  const start = performance.now();
+  let start: number | undefined;
   const tick = (now: number) => {
+    start ??= now;
     const elapsed = Math.max(0, now - start);
     const progress = Math.min(1, elapsed / BEAM_MS);
-    // "out" is "in" played backwards, so both ways have the same speed and the same fade.
     const forward = direction === "out" ? progress : 1 - progress;
     const reach = easeInOut(forward);
     const radius = Math.max(0.001, endRadius * reach);
-    // The wash is gone before it gets to the element, so it does not paint over it.
     const alpha = BEAM_ALPHA * smoothstep(0.03, 0.18, radius) * (1 - smoothstep(0.75, 1, forward));
     band.draw(radius, progress, elapsed / 1000, alpha);
     ripple.draw(radius, progress);
@@ -813,9 +768,9 @@ export function beam(element: Element, direction: RingDirection): boolean {
   };
   band.draw(0.001, 0, 0, 0);
   ripple.draw(direction === "out" ? 0.001 : endRadius, 0);
-  // The filter is on the body, so the wash and the filter stay outside it.
   document.documentElement.append(ripple.element, band.canvas);
   body.setProperty("filter", `url("#${RING_RIPPLE_ID}")`);
   frame = requestAnimationFrame(tick);
-  return true;
+  deadline = window.setTimeout(stop, BEAM_DEADLINE_MS);
+  return ended;
 }

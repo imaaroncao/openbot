@@ -1,10 +1,10 @@
 {
-  "version": "0.64.0",
+  "version": "0.76.1",
   "highlights": [
-    "If your Claude agents use your own CLAUDE.md, skills or hooks, turn on Use my Claude Code setup in Settings → Providers → Claude.",
-    "Put your agents on the new agent dock at the edge of your Mac screen, and chat with them from there.",
-    "Agents now write short updates while they work. Choose Classic in Server settings to keep the old style.",
-    "Members of a joined server can add their own MCP servers and connect apps such as Trello.",
-    "Attach a file of any type to a chat, and send files of up to 100 MB from the web app."
+    "Update your joined servers to this version too, so that parallel tasks, workflow folders, typed workflow answers and up to 20 provider accounts work there.",
+    "Agents can split unrelated work into tasks that run at the same time and combine the results for you.",
+    "Open the agent browser in its own window and move it to a second monitor.",
+    "Word documents open in the file preview, and the Files panel opens the workspace folder of the agent.",
+    "Change any keyboard shortcut in the new Keyboard tab of Settings."
   ]
 }

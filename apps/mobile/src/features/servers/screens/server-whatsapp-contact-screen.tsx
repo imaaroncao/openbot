@@ -9,10 +9,8 @@ import { SheetFormField } from "@/shared/components/sheet-form-field";
 import { SheetSaveAction } from "@/shared/components/sheet-save-action";
 import { useText } from "@/shared/lib/text";
 
-/**
- * Marketplace › Apps › WhatsApp › Add contact: a person who can give work through one
- * linked number. The host keeps the number in digits; the name is optional.
- */
+const PHONE_PLACEHOLDER = "+44 7700 900123";
+
 export function ServerWhatsAppContactScreen() {
   const { t, errorMessage } = useText();
   const { serverId, workspaceId } = useLocalSearchParams<{ serverId: string; workspaceId: string }>();
@@ -62,6 +60,7 @@ export function ServerWhatsAppContactScreen() {
       ) : null}
       <SheetFormField
         label={t("mobile.server.connectors.whatsapp.phoneLabel")}
+        placeholder={PHONE_PLACEHOLDER}
         inputMode="tel"
         autoCorrect={false}
         autoFocus

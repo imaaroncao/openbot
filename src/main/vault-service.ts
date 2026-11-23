@@ -1,30 +1,37 @@
-// The Vault of this computer: logins, payment cards, contact info and API keys that the user saves in
-// Server settings. Agents fill logins through the `PasswordVault` port (`openbot:` IDs) and cards and
-// contact info through `VaultItems`; neither port gives an agent a password, a card number or a security
-// code. Agents can also add and change items through `VaultItems`, and save a password or an API key
-// that they have, but never read one back or set a card number. API keys reach an agent only as files
-// that `AgentApiKeys` writes.
-
 import { randomUUID } from "node:crypto";
 import {
   cardBrand,
+  VAULT_AGENT_SCOPE_LIMIT,
   VAULT_FILL_SITE_LIMIT,
   VAULT_NOTES_LIMIT,
   VAULT_PASSWORD_LIMIT,
   VAULT_TEXT_LIMIT,
   type VaultContactFields,
   type VaultImportResult,
+  type VaultItemScope,
   type VaultItemSummary,
   type VaultSaveInput,
+  type VaultSaveScope,
   type VaultSecretRequest,
   type VaultState,
   type VaultStatus,
+  type VaultTwoStepCode,
+  vaultItemAllows,
 } from "@openbot/contracts/ipc";
+import {
+  normalizeTwoStepKey,
+  parseTwoStepKey,
+  type TwoStepKey,
+  twoStepCode,
+  twoStepKeySecret,
+  twoStepRemainingMs,
+} from "@openbot/contracts/two-step-code";
 import { type SourceMessages, sourceText } from "@openbot/i18n/source";
 import { registerSecretValues } from "@openbot/logging";
 import { Effect } from "effect";
 import { type PasswordVault, PasswordVaultError, websiteMatchesOrigin, websiteUrl } from "../backend/password-vault";
 import type {
+  VaultAgent,
   VaultAgentApiKey,
   VaultAgentChange,
   VaultAgentResult,
@@ -43,20 +50,22 @@ function vaultError(key: VaultErrorKey): PasswordVaultError {
   return new PasswordVaultError({ cause: new Error(sourceText(key)) });
 }
 
-/** For a change function: the store turns the thrown error into a `PasswordVaultError`. */
 function refuse(key: VaultErrorKey): never {
   throw new Error(sourceText(key));
 }
 
-/**
- * Registers every secret of `record` for log redaction, in one pattern rebuild. A card number is
- * also redacted as the page may show it, in groups of four. The security code is not registered:
- * a three-digit pattern would remove numbers from every log line. It reaches only the page.
- */
 function registerSecrets(record: VaultRecord): void {
   registerSecretValues(
     record.logins.map((login) => login.password),
     { allowShort: true },
+  );
+  registerSecretValues(
+    record.logins.flatMap(({ twoStepKey }) => {
+      const secret = twoStepKey ? twoStepKeySecret(twoStepKey) : null;
+      if (!twoStepKey || !secret) return [];
+      const grouped = secret.replace(/(.{4})(?=.)/gu, "$1 ");
+      return [twoStepKey, secret, secret.toLowerCase(), grouped, grouped.toLowerCase()];
+    }),
   );
   registerSecretValues(
     record.cards.flatMap(({ number }) => [
@@ -71,14 +80,52 @@ function registerSecrets(record: VaultRecord): void {
   );
 }
 
+function makeCode(key: TwoStepKey, at: number): Effect.Effect<string, PasswordVaultError> {
+  return Effect.tryPromise({ try: () => twoStepCode(key, at), catch: (cause) => new PasswordVaultError({ cause }) });
+}
+
 function loginTitle(website: string): string {
   return websiteUrl(website)?.hostname ?? website;
 }
 
-/** The agent that added an item, kept when the user or another agent changes it. */
+function sameScheme(left: string, right: string): boolean {
+  return websiteUrl(left)?.protocol === websiteUrl(right)?.protocol;
+}
+
+function typedLoginWebsite(website: string): string {
+  const url = websiteUrl(website);
+  if (!url) return website;
+  return url.protocol === "http:" ? url.origin : url.host;
+}
+
+function loginHost(website: string): string | undefined {
+  return websiteUrl(website)?.host.replace(/^www\./u, "");
+}
+
 function origin(existing: { addedBy?: string } | undefined, addedBy: string | undefined): { addedBy?: string } {
   const name = existing ? existing.addedBy : addedBy;
   return name === undefined ? {} : { addedBy: name };
+}
+
+function scope(
+  existing: { readonly agents?: readonly string[] } | undefined,
+  input: VaultSaveScope,
+): { agents?: string[] } {
+  const agents = input.agents === undefined ? existing?.agents : (input.agents ?? undefined);
+  return agents === undefined ? {} : { agents: [...agents] };
+}
+
+function listedScope(item: { readonly agents?: readonly string[] }): VaultItemScope {
+  return item.agents === undefined ? {} : { agents: [...item.agents] };
+}
+
+function onlyFor(item: { readonly agents?: readonly string[] }, agentId: string): boolean {
+  return item.agents?.length === 1 && item.agents[0] === agentId;
+}
+
+function sameReader(a: VaultItemScope, b: { readonly agents?: readonly string[] }): boolean {
+  if (a.agents === undefined || b.agents === undefined) return a.agents === undefined && b.agents === undefined;
+  return a.agents.some((agent) => b.agents?.includes(agent));
 }
 
 const EMPTY_CONTACT: VaultContactFields = {
@@ -94,7 +141,6 @@ const EMPTY_CONTACT: VaultContactFields = {
   email: "",
 };
 
-/** `saved` with each field that `given` has over it. */
 function mergeContact(
   saved: VaultContactFields,
   given: Extract<VaultAgentChange, { kind: "contact" }>["fields"],
@@ -113,7 +159,6 @@ function mergeContact(
   };
 }
 
-/** The name that the user knows an item by. It holds no secret: a card shows its last four digits only. */
 function itemName(record: VaultRecord, id: string): VaultAgentResult | null {
   const login = record.logins.find((item) => item.id === id);
   if (login) return { id, kind: "login", name: loginTitle(login.website) };
@@ -127,10 +172,6 @@ function itemName(record: VaultRecord, id: string): VaultAgentResult | null {
   return null;
 }
 
-/**
- * The settings-page input for an agent's change: the saved values, with the fields the agent gave
- * over them. Secrets stay null, so the saved ones are kept. The same decoder then checks it.
- */
 function agentSaveInput(record: VaultRecord, change: VaultAgentChange): VaultSaveInput {
   const find = <T extends { id: string }>(items: readonly T[], id: string): T =>
     items.find((item) => item.id === id) ?? refuse("error.vault.itemMissing");
@@ -149,6 +190,7 @@ function agentSaveInput(record: VaultRecord, change: VaultAgentChange): VaultSav
         username: change.username ?? existing.username,
         notes: existing.notes,
         password: change.password ?? null,
+        twoStepKey: change.twoStepKey,
       });
     }
     case "card": {
@@ -174,17 +216,20 @@ function summary(record: VaultRecord): VaultItemSummary[] {
       (login): VaultItemSummary => ({
         id: login.id,
         ...origin(login, undefined),
+        ...listedScope(login),
         kind: "login",
         website: login.website,
         username: login.username,
         notes: login.notes,
         hasPassword: login.password.length > 0,
+        hasTwoStep: Boolean(login.twoStepKey),
       }),
     ),
     ...record.cards.map(
       (card): VaultItemSummary => ({
         id: card.id,
         ...origin(card, undefined),
+        ...listedScope(card),
         kind: "card",
         label: card.label,
         nameOnCard: card.nameOnCard,
@@ -196,11 +241,15 @@ function summary(record: VaultRecord): VaultItemSummary[] {
         fillSites: (card.fillSites ?? []).map(({ page }) => page),
       }),
     ),
-    ...record.contacts.map((contact): VaultItemSummary => ({ ...contact, kind: "contact" })),
+    ...record.contacts.map((item): VaultItemSummary => {
+      const { agents: _agents, ...contact } = item;
+      return { ...contact, ...listedScope(item), kind: "contact" };
+    }),
     ...record.apiKeys.map(
       (apiKey): VaultItemSummary => ({
         id: apiKey.id,
         ...origin(apiKey, undefined),
+        ...listedScope(apiKey),
         kind: "apiKey",
         name: apiKey.name,
         notes: apiKey.notes,
@@ -210,18 +259,47 @@ function summary(record: VaultRecord): VaultItemSummary[] {
   ];
 }
 
+function sameLoginEdits(
+  record: VaultRecord,
+  input: VaultSaveInput,
+  allows: (login: StoredLogin) => boolean,
+): VaultSaveInput[] {
+  if (input.kind !== "login" || input.id !== null || input.password === null) return [];
+  const host = loginHost(input.website);
+  if (host === undefined) return [];
+  const { username, notes, password, twoStepKey, agents } = input;
+  return record.logins
+    .filter(
+      (login) =>
+        allows(login) &&
+        login.username === username &&
+        loginHost(login.website) === host &&
+        sameScheme(login.website, input.website),
+    )
+    .map((login, index) => ({
+      kind: "login",
+      id: login.id,
+      website: login.website,
+      username: login.username,
+      notes: notes || login.notes,
+      password,
+      ...(twoStepKey === undefined ? {} : { twoStepKey }),
+      ...(index === 0 && agents && login.agents
+        ? { agents: [...new Set([...agents, ...login.agents])].slice(0, VAULT_AGENT_SCOPE_LIMIT) }
+        : {}),
+    }));
+}
+
 function replaceOrAdd<T extends { id: string }>(items: readonly T[], item: T): T[] {
   return items.some(({ id }) => id === item.id)
     ? items.map((current) => (current.id === item.id ? item : current))
     : [...items, item];
 }
 
-/** The CSV file that `importCsv` reads, in bytes. A password export of thousands of logins fits. */
 export const VAULT_CSV_LIMIT = 4 * 1024 * 1024;
 
 export interface VaultServiceOptions {
   store: VaultStore;
-  /** False on Linux without a keyring: nothing can be encrypted, so nothing is saved. */
   canPersist: () => boolean;
 }
 
@@ -247,7 +325,11 @@ export class VaultService {
   });
 
   state(): VaultState {
-    return { status: this.#status, items: this.#status === "ready" ? summary(this.#store.read()) : [] };
+    return {
+      status: this.#status,
+      items: this.#status === "ready" ? summary(this.#store.read()) : [],
+      agentScope: true,
+    };
   }
 
   onChanged(listener: (state: VaultState) => void): () => void {
@@ -256,7 +338,7 @@ export class VaultService {
   }
 
   readonly save = Effect.fn("VaultService.save")(function* (this: VaultService, input: VaultSaveInput) {
-    yield* this.#change((record) => this.#put(record, input, undefined).record);
+    yield* this.#change((record) => this.#putNew(record, input, () => true, undefined).record);
     return this.state();
   });
 
@@ -267,7 +349,6 @@ export class VaultService {
     return this.state();
   });
 
-  /** A saved password, card number, security code or API key, for the user who asked to see or copy it. */
   reveal({ id, field }: VaultSecretRequest): string {
     this.#requireReady();
     const record = this.#store.read();
@@ -292,10 +373,6 @@ export class VaultService {
     return refuse("error.vault.itemMissing");
   }
 
-  /**
-   * Adds the logins of a CSV export. A row is skipped when its website is not HTTPS, it has no
-   * password, or the same login is already saved.
-   */
   readonly importCsv = Effect.fn("VaultService.importCsv")(function* (this: VaultService, source: string) {
     const parsed = yield* Effect.try({
       try: () => parseLoginCsv(source),
@@ -315,16 +392,26 @@ export class VaultService {
           website.length <= VAULT_TEXT_LIMIT &&
           row.username.length <= VAULT_TEXT_LIMIT &&
           row.password.length <= VAULT_PASSWORD_LIMIT;
-        const duplicate =
-          valid &&
-          logins.some(
-            (login) =>
-              loginTitle(login.website) === loginTitle(website) &&
-              login.username === row.username &&
-              login.password === row.password,
-          );
-        if (!valid || duplicate) {
+        if (!valid) {
           skipped += 1;
+          continue;
+        }
+        const twoStepKey = row.twoStepKey ? normalizeTwoStepKey(row.twoStepKey) : null;
+        const duplicate = logins.findIndex(
+          (login) =>
+            loginTitle(login.website) === loginTitle(website) &&
+            sameScheme(login.website, website) &&
+            login.username === row.username &&
+            login.password === row.password,
+        );
+        if (duplicate >= 0) {
+          const saved = logins[duplicate];
+          if (saved && twoStepKey && !saved.twoStepKey) {
+            logins[duplicate] = { ...saved, twoStepKey };
+            imported += 1;
+          } else {
+            skipped += 1;
+          }
           continue;
         }
         logins.push({
@@ -333,6 +420,7 @@ export class VaultService {
           username: row.username,
           password: row.password,
           notes: row.notes.slice(0, VAULT_NOTES_LIMIT),
+          ...(twoStepKey ? { twoStepKey } : {}),
         });
         imported += 1;
       }
@@ -342,7 +430,6 @@ export class VaultService {
     return result;
   });
 
-  /** Removes the Vault file and every item. The only way out of `unreadable`. */
   readonly reset = Effect.fn("VaultService.reset")(function* (this: VaultService) {
     if (!this.#canPersist()) {
       this.#status = "unavailable";
@@ -354,42 +441,63 @@ export class VaultService {
     return this.state();
   });
 
-  /** The built-in logins, for the password vault router under the `openbot:` prefix. */
+  readonly codes = Effect.fn("VaultService.codes")(function* (this: VaultService) {
+    if (this.#status !== "ready") return { codes: [] };
+    const at = Date.now();
+    const codes: VaultTwoStepCode[] = [];
+    for (const login of this.#store.read().logins) {
+      const key = login.twoStepKey ? parseTwoStepKey(login.twoStepKey) : null;
+      if (!key) continue;
+      const code = yield* makeCode(key, at);
+      codes.push({ id: login.id, code, period: key.period, remainingMs: twoStepRemainingMs(key.period, at) });
+    }
+    return { codes };
+  });
+
   readonly logins: PasswordVault = {
     connected: () => this.#status === "ready" && this.#store.read().logins.length > 0,
-    loginsFor: (origin) =>
+    loginsFor: (origin, agentId) =>
       Effect.sync(() => {
         if (this.#status !== "ready") return null;
         return this.#store
           .read()
-          .logins.filter((login) => websiteMatchesOrigin({ url: login.website, autofill: "anywhere" }, origin))
+          .logins.filter(
+            (login) =>
+              this.#allows(login, agentId) &&
+              websiteMatchesOrigin({ url: login.website, autofill: "anywhere" }, origin),
+          )
           .map((login) => ({
             id: login.id,
             title: loginTitle(login.website),
             username: login.username || null,
-            hasOneTimePassword: false,
+            hasOneTimePassword: Boolean(login.twoStepKey),
           }));
       }),
-    secretFor: (loginId, origin, kind) =>
-      Effect.sync(() => {
-        if (this.#status !== "ready" || kind !== "password") return null;
+    secretFor: (loginId, origin, kind, agentId) =>
+      Effect.suspend(() => {
+        if (this.#status !== "ready") return Effect.succeed(null);
         const login = this.#store.read().logins.find((item) => item.id === loginId);
-        if (!login?.password || !websiteMatchesOrigin({ url: login.website, autofill: "anywhere" }, origin))
-          return null;
-        return login.password;
+        if (
+          !login ||
+          !this.#allows(login, agentId) ||
+          !websiteMatchesOrigin({ url: login.website, autofill: "anywhere" }, origin)
+        )
+          return Effect.succeed(null);
+        if (kind === "password") return Effect.succeed(login.password || null);
+        const key = login.twoStepKey ? parseTwoStepKey(login.twoStepKey) : null;
+        return key ? makeCode(key, Date.now()) : Effect.succeed(null);
       }),
   };
 
   readonly #agentSave = Effect.fn("VaultService.agentSave")(function* (
     this: VaultService,
     change: VaultAgentChange,
-    addedBy: string | undefined,
+    agent: VaultAgent,
   ) {
-    // The change runs inside the store's write, so the result is kept here.
     const outcome: { saved: (VaultAgentResult & { created: boolean }) | null } = { saved: null };
     yield* this.#change((record) => {
-      const input = agentSaveInput(record, change);
-      const next = this.#put(record, input, addedBy);
+      const input = agentSaveInput(this.#forAgent(record, agent.id), change);
+      const next = this.#put(record, input, agent.name);
       const named = itemName(next.record, next.id);
       outcome.saved = named && { ...named, created: input.id === null };
       return next.record;
@@ -397,18 +505,20 @@ export class VaultService {
     return outcome.saved ?? (yield* vaultError("error.vault.itemMissing"));
   });
 
-  readonly #agentDelete = Effect.fn("VaultService.agentDelete")(function* (this: VaultService, id: string) {
+  readonly #agentDelete = Effect.fn("VaultService.agentDelete")(function* (
+    this: VaultService,
+    id: string,
+    agentId: string,
+  ) {
     const outcome: { deleted: VaultAgentResult | null } = { deleted: null };
     yield* this.#change((record) => {
-      // An agent does not see API keys as items, so it cannot delete one.
-      const named = itemName(record, id);
+      const named = itemName(this.#forAgent(record, agentId), id);
       outcome.deleted = named?.kind === "apiKey" ? null : named;
       return outcome.deleted ? this.#without(record, id) : record;
     });
     return outcome.deleted;
   });
 
-  /** Lets agents fill `cardId` on `page` into fields in `frames`, next to what the owner approved before. */
   readonly #approveCardFill = Effect.fn("VaultService.approveCardFill")(function* (
     this: VaultService,
     cardId: string,
@@ -420,7 +530,6 @@ export class VaultService {
       const sites = card.fillSites ?? [];
       const known = sites.find((entry) => entry.page === page)?.frames ?? [];
       const site = { page, frames: [...new Set([...known, ...frames])] };
-      // The newest approval goes last, so the limit drops the oldest one.
       const fillSites = [...sites.filter((entry) => entry.page !== page), site].slice(-VAULT_FILL_SITE_LIMIT);
       return { ...record, cards: replaceOrAdd(record.cards, { ...card, fillSites }) };
     });
@@ -429,7 +538,7 @@ export class VaultService {
   readonly #saveTypedLogin = Effect.fn("VaultService.saveTypedLogin")(function* (
     this: VaultService,
     login: VaultTypedLogin,
-    addedBy: string | undefined,
+    agent: VaultAgent,
   ) {
     const website = vaultWebsite(login.origin);
     if (!website || login.username.length > VAULT_TEXT_LIMIT) return yield* vaultError("error.vault.websiteInvalid");
@@ -438,10 +547,15 @@ export class VaultService {
     const username = login.username.trim();
     const outcome: { saved: (VaultAgentResult & { created: boolean; changed: boolean }) | null } = { saved: null };
     yield* this.#change((record) => {
-      const existing = record.logins.find(
-        (item) =>
-          item.username === username && websiteMatchesOrigin({ url: item.website, autofill: "anywhere" }, website),
-      );
+      const matches = (item: StoredLogin) =>
+        item.username === username &&
+        sameScheme(item.website, website) &&
+        websiteMatchesOrigin({ url: item.website, autofill: "anywhere" }, website);
+      const usable = record.logins.filter((item) => vaultItemAllows(item, agent.id) && matches(item));
+      const existing =
+        usable.find((item) => loginHost(item.website) === loginHost(website)) ??
+        usable.find((item) => item.password === login.password);
+      const hidden = !existing && record.logins.some((item) => !vaultItemAllows(item, agent.id) && matches(item));
       if (existing?.password === login.password) {
         outcome.saved = {
           id: existing.id,
@@ -452,17 +566,16 @@ export class VaultService {
         };
         return record;
       }
-      // The host alone, as the user types a website in the Vault page.
-      const host = websiteUrl(website)?.host ?? website;
       const stored: StoredLogin = existing
         ? { ...existing, password: login.password }
         : {
             id: randomUUID(),
-            website: host,
+            website: typedLoginWebsite(website),
             username,
             password: login.password,
             notes: "",
-            ...origin(undefined, addedBy),
+            ...origin(undefined, agent.name),
+            ...(hidden ? { agents: [agent.id] } : {}),
           };
       outcome.saved = {
         id: stored.id,
@@ -479,59 +592,97 @@ export class VaultService {
   readonly #saveApiKey = Effect.fn("VaultService.saveApiKey")(function* (
     this: VaultService,
     apiKey: VaultAgentApiKey,
-    addedBy: string | undefined,
+    agent: VaultAgent,
+    only: boolean,
   ) {
     const outcome: { saved: (VaultAgentResult & { created: boolean }) | null } = { saved: null };
     yield* this.#change((record) => {
-      const existing = record.apiKeys.find((item) => item.name === apiKey.name);
+      const named = record.apiKeys.filter((item) => item.name === apiKey.name);
+      const existing = named.find((item) => (only ? onlyFor(item, agent.id) : item.agents === undefined));
+      const apiKeys = record.apiKeys.flatMap((item): StoredApiKey[] => {
+        if (item.name !== apiKey.name || item === existing || !item.agents?.includes(agent.id)) return [item];
+        const agents = item.agents.filter((id) => id !== agent.id);
+        return agents.length > 0 ? [{ ...item, agents }] : [];
+      });
       const next = this.#put(
-        record,
+        { ...record, apiKeys },
         decodeVaultSaveInput({
           kind: "apiKey",
           id: existing?.id ?? null,
           name: apiKey.name,
           notes: apiKey.notes ?? existing?.notes ?? "",
           key: apiKey.key,
+          agents: only ? [agent.id] : null,
         }),
-        addedBy,
+        agent.name,
       );
-      const named = itemName(next.record, next.id);
-      outcome.saved = named && { ...named, created: !existing };
+      const saved = itemName(next.record, next.id);
+      outcome.saved = saved && { ...saved, created: !existing };
       return next.record;
     });
     return outcome.saved ?? (yield* vaultError("error.vault.itemMissing"));
   });
 
+  readonly #removeAgentApiKey = Effect.fn("VaultService.removeAgentApiKey")(function* (
+    this: VaultService,
+    agentId: string,
+    name: string,
+  ) {
+    const outcome = { removed: false };
+    yield* this.#change((record) => {
+      const own = record.apiKeys.find((item) => item.name === name && onlyFor(item, agentId));
+      outcome.removed = own !== undefined;
+      return own ? this.#without(record, own.id) : record;
+    });
+    return outcome.removed;
+  });
+
   readonly #addEntered = Effect.fn("VaultService.addEntered")(function* (
     this: VaultService,
     item: VaultEnteredItem,
-    addedBy: string | undefined,
+    agent: VaultAgent,
   ) {
     const outcome: { saved: VaultAgentResult | null } = { saved: null };
     yield* this.#change((record) => {
-      // The same checks as the Vault page: an HTTPS website, a card number that passes the Luhn check.
-      const next = this.#put(record, decodeVaultSaveInput(item), addedBy);
+      const input: VaultSaveInput = { ...decodeVaultSaveInput(item), agents: null };
+      const next = this.#putNew(record, input, (login) => vaultItemAllows(login, agent.id), agent.name);
       outcome.saved = itemName(next.record, next.id);
       return next.record;
     });
     return outcome.saved ?? (yield* vaultError("error.vault.itemMissing"));
   });
 
-  /** The cards and contact info, for the browser tools, and the API keys, for `AgentApiKeys`. */
   readonly items: VaultItems = {
     ready: () => this.#status === "ready",
-    apiKeys: () =>
-      this.#status === "ready" ? this.#store.read().apiKeys.map(({ name, key }) => ({ name, value: key })) : [],
-    hasCards: () => this.#status === "ready" && this.#store.read().cards.length > 0,
-    hasContacts: () => this.#status === "ready" && this.#store.read().contacts.length > 0,
-    listForAgent: () => {
+    apiKeys: (agentId) => {
+      if (this.#status !== "ready") return [];
+      const keys = new Map<string, { value: string; own: boolean }>();
+      const { apiKeys } = this.#store.read();
+      for (const item of apiKeys) if (item.agents === undefined) keys.set(item.name, { value: item.key, own: false });
+      for (const item of apiKeys)
+        if (item.agents?.includes(agentId)) keys.set(item.name, { value: item.key, own: onlyFor(item, agentId) });
+      return [...keys].map(([name, { value, own }]) => ({ name, value, own }));
+    },
+    sharedApiKeys: () =>
+      this.#status === "ready"
+        ? this.#store
+            .read()
+            .apiKeys.filter((item) => item.agents === undefined)
+            .map((item) => ({ name: item.name, value: item.key }))
+        : [],
+    hasCards: (agentId) =>
+      this.#status === "ready" && this.#store.read().cards.some((item) => vaultItemAllows(item, agentId)),
+    hasContacts: (agentId) =>
+      this.#status === "ready" && this.#store.read().contacts.some((item) => vaultItemAllows(item, agentId)),
+    listForAgent: (agentId) => {
       if (this.#status !== "ready") return { logins: [], cards: [], contacts: [] };
-      const record = this.#store.read();
+      const record = this.#forAgent(this.#store.read(), agentId);
       return {
         logins: record.logins.map((login) => ({
           id: login.id,
           website: login.website,
           username: login.username,
+          hasTwoStepKey: Boolean(login.twoStepKey),
           ...origin(login, undefined),
         })),
         cards: record.cards.map((card) => ({
@@ -545,12 +696,12 @@ export class VaultService {
           billingContactId: card.billingContactId,
           ...origin(card, undefined),
         })),
-        contacts: record.contacts.map((contact) => ({ ...contact })),
+        contacts: record.contacts.map(({ agents: _agents, ...contact }) => ({ ...contact })),
       };
     },
-    cardSecret: (cardId): VaultCardSecret | null => {
+    cardSecret: (cardId, agentId): VaultCardSecret | null => {
       if (this.#status !== "ready") return null;
-      const card = this.#store.read().cards.find((item) => item.id === cardId);
+      const card = this.#forAgent(this.#store.read(), agentId).cards.find((item) => item.id === cardId);
       return card
         ? {
             number: card.number,
@@ -570,14 +721,41 @@ export class VaultService {
       return site !== undefined && frames.every((frame) => site.frames.includes(frame));
     },
     approveCardFill: (cardId, page, frames) => this.#approveCardFill(cardId, page, frames),
-    save: (change, addedBy) => this.#agentSave(change, addedBy),
-    delete: (id) => this.#agentDelete(id),
-    saveLogin: (login, addedBy) => this.#saveTypedLogin(login, addedBy),
-    saveApiKey: (apiKey, addedBy) => this.#saveApiKey(apiKey, addedBy),
-    addEntered: (item, addedBy) => this.#addEntered(item, addedBy),
+    save: (change, agent) => this.#agentSave(change, agent),
+    delete: (id, agentId) => this.#agentDelete(id, agentId),
+    saveLogin: (login, agent) => this.#saveTypedLogin(login, agent),
+    saveApiKey: (apiKey, agent, only) => this.#saveApiKey(apiKey, agent, only),
+    removeAgentApiKey: (agentId, name) => this.#removeAgentApiKey(agentId, name),
+    addEntered: (item, agent) => this.#addEntered(item, agent),
   };
 
-  /** `record` with `input` added or changed, and the id of that item. */
+  #allows(item: { readonly agents?: readonly string[] }, agentId: string | undefined): boolean {
+    return agentId === undefined ? item.agents === undefined : vaultItemAllows(item, agentId);
+  }
+
+  #forAgent(record: VaultRecord, agentId: string): VaultRecord {
+    const allowed = <T extends { readonly agents?: readonly string[] }>(items: readonly T[]) =>
+      items.filter((item) => vaultItemAllows(item, agentId));
+    return {
+      logins: allowed(record.logins),
+      cards: allowed(record.cards),
+      contacts: allowed(record.contacts),
+      apiKeys: allowed(record.apiKeys),
+    };
+  }
+
+  #putNew(
+    record: VaultRecord,
+    input: VaultSaveInput,
+    allows: (login: StoredLogin) => boolean,
+    addedBy: string | undefined,
+  ): { record: VaultRecord; id: string } {
+    const edits = sameLoginEdits(record, input, allows);
+    const id = edits[0]?.id;
+    if (!id) return this.#put(record, input, addedBy);
+    return { record: edits.reduce((next, edit) => this.#put(next, edit, addedBy).record, record), id };
+  }
+
   #put(record: VaultRecord, input: VaultSaveInput, addedBy: string | undefined): { record: VaultRecord; id: string } {
     switch (input.kind) {
       case "login": {
@@ -589,9 +767,14 @@ export class VaultService {
         return { record: { ...record, cards: replaceOrAdd(record.cards, card) }, id: card.id };
       }
       case "contact": {
-        const { kind: _kind, id, ...fields } = input;
+        const { kind: _kind, id, agents, ...fields } = input;
         const existing = id === null ? undefined : this.#find(record.contacts, id);
-        const contact: StoredContact = { ...fields, id: existing?.id ?? randomUUID(), ...origin(existing, addedBy) };
+        const contact: StoredContact = {
+          ...fields,
+          id: existing?.id ?? randomUUID(),
+          ...origin(existing, addedBy),
+          ...scope(existing, { agents }),
+        };
         return { record: { ...record, contacts: replaceOrAdd(record.contacts, contact) }, id: contact.id };
       }
       case "apiKey": {
@@ -604,7 +787,6 @@ export class VaultService {
   #without(record: VaultRecord, id: string): VaultRecord {
     return {
       logins: record.logins.filter((login) => login.id !== id),
-      // A card that names the removed contact as its billing address keeps no reference to it.
       cards: record.cards
         .filter((card) => card.id !== id)
         .map((card) => (card.billingContactId === id ? { ...card, billingContactId: null } : card)),
@@ -621,13 +803,16 @@ export class VaultService {
     const existing = input.id === null ? undefined : this.#find(record.logins, input.id);
     const password = input.password ?? existing?.password;
     if (!password) return refuse("error.vault.passwordRequired");
+    const twoStepKey = input.twoStepKey === undefined ? existing?.twoStepKey : input.twoStepKey;
     return {
       id: existing?.id ?? randomUUID(),
       website: input.website,
       username: input.username,
       notes: input.notes,
       password,
+      ...(twoStepKey ? { twoStepKey } : {}),
       ...origin(existing, addedBy),
+      ...scope(existing, input),
     };
   }
 
@@ -641,7 +826,6 @@ export class VaultService {
     if (!number) return refuse("error.vault.cardNumberInvalid");
     if (input.billingContactId !== null && !record.contacts.some(({ id }) => id === input.billingContactId))
       return refuse("error.vault.contactMissing");
-    // The page can only remove an approved site. A new one comes from the owner's approval card.
     const kept = input.fillSites;
     const fillSites = (existing?.fillSites ?? []).filter(({ page }) => kept === undefined || kept.includes(page));
     return {
@@ -655,10 +839,10 @@ export class VaultService {
       billingContactId: input.billingContactId,
       ...(fillSites.length > 0 ? { fillSites } : {}),
       ...origin(existing, addedBy),
+      ...scope(existing, input),
     };
   }
 
-  /** A name names one key: an agent reads the key by its name. */
   #apiKey(
     record: VaultRecord,
     input: Extract<VaultSaveInput, { kind: "apiKey" }>,
@@ -667,18 +851,22 @@ export class VaultService {
     const existing = input.id === null ? undefined : this.#find(record.apiKeys, input.id);
     const key = input.key ?? existing?.key;
     if (!key) return refuse("error.vault.apiKeyRequired");
-    if (record.apiKeys.some((item) => item.name === input.name && item.id !== existing?.id))
-      return refuse("error.vault.apiKeyNameTaken");
+    const agents = scope(existing, input);
+    const other = record.apiKeys.find(
+      (item) => item.name === input.name && item.id !== existing?.id && sameReader(agents, item),
+    );
+    if (other)
+      return refuse(agents.agents === undefined ? "error.vault.apiKeyNameTaken" : "error.vault.apiKeyAgentTaken");
     return {
       id: existing?.id ?? randomUUID(),
       name: input.name,
       key,
       notes: input.notes,
       ...origin(existing, addedBy),
+      ...agents,
     };
   }
 
-  /** An edit of an item that another window removed fails, so it does not come back as a new item. */
   #find<T extends { id: string }>(items: readonly T[], id: string): T {
     const item = items.find((current) => current.id === id);
     return item ?? refuse("error.vault.itemMissing");

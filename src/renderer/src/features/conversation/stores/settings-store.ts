@@ -45,19 +45,22 @@ export interface SettingsStoreDeps {
   saveAgentPatch: (updates: Omit<UpdateAgentInput, "agentId">, targetAgentId?: string) => Promise<boolean>;
 }
 
+interface RuntimeSettingsSave {
+  saved: boolean;
+  refusal?: { error: unknown } | undefined;
+}
+
 export function createSettingsStore(deps: SettingsStoreDeps) {
   async function saveRuntimeSettings(
     settings: AgentRuntimeSettings,
     updates: AgentRuntimeSettingsPatch,
     errorMessage: string | null,
     targetAgentId = deps.props.agent?.id,
-  ): Promise<boolean> {
+  ): Promise<RuntimeSettingsSave> {
     const agentId = targetAgentId;
-    if (!agentId) return false;
+    if (!agentId) return { saved: false };
     const serverId = deps.props.server?.id ?? "local";
     const target = { agentId, serverId };
-    // Both maps live on the controller, which outlives one server, so the key
-    // has to say which server the settings belong to.
     const settingsKey = agentConversationKey(serverId, agentId);
     const previousAttempt = deps.runtimeSettingsAttempts.get(settingsKey);
     const generation = (previousAttempt?.generation ?? 0) + 1;
@@ -70,18 +73,21 @@ export function createSettingsStore(deps: SettingsStoreDeps) {
       releaseSave = resolve;
     });
     deps.runtimeSettingsSaveTails.set(settingsKey, saveTail);
-    let saved: boolean;
+    let saved = false;
+    let refusal: RuntimeSettingsSave["refusal"];
     let baseValid = true;
     let abandoned = false;
     try {
       if (previousSave) baseValid = await previousSave;
-      // `agent.updateAgent` is routed by the server main has selected, not by the
-      // agent id in its payload, so a save still queued behind an earlier one when
-      // the user leaves would be applied to whichever server they arrive at. It
-      // belongs to the one it was made on, and that one is gone.
       abandoned = !deps.viewIsMounted();
       const completePatch = isCompleteRuntimeSettingsPatch(updates);
-      saved = !abandoned && (baseValid || completePatch) ? await deps.saveAgentPatch(updates, agentId) : false;
+      if (!abandoned && (baseValid || completePatch)) {
+        try {
+          saved = await deps.saveAgentPatch(updates, agentId);
+        } catch (error) {
+          refusal = { error };
+        }
+      }
       if (completePatch) baseValid = saved;
     } finally {
       releaseSave(baseValid);
@@ -90,11 +96,9 @@ export function createSettingsStore(deps: SettingsStoreDeps) {
       }
     }
     const latestAttempt = deps.runtimeSettingsAttempts.get(settingsKey);
-    if (latestAttempt?.generation !== generation) return true;
+    if (latestAttempt?.generation !== generation) return { saved: true };
     latestAttempt.pending = false;
-    // Nothing left to report to: the pickers, the composer error and the agent
-    // this would roll back to all belonged to the conversation that is gone.
-    if (abandoned) return false;
+    if (abandoned) return { saved: false };
     if (saved) {
       const activeAgent = deps.props.agent;
       if (activeAgent?.id === agentId) {
@@ -103,7 +107,7 @@ export function createSettingsStore(deps: SettingsStoreDeps) {
         deps.setSettingsModel(runtime.model);
         deps.setSettingsReasoning(runtime.reasoningEffort);
       }
-      return true;
+      return { saved: true };
     }
 
     const activeAgent = deps.props.agent;
@@ -112,13 +116,16 @@ export function createSettingsStore(deps: SettingsStoreDeps) {
       model: deps.settingsModel(),
       reasoningEffort: deps.settingsReasoning(),
     };
-    if (activeAgent?.id !== agentId || !runtimeSettingsEqual(currentSettings, settings)) return false;
+    if (activeAgent?.id !== agentId || !runtimeSettingsEqual(currentSettings, settings))
+      return { saved: false, refusal };
     const runtime = activeAgent.pendingRuntime ?? activeAgent;
     if (isKnownAgentProvider(runtime.provider)) deps.setSettingsProvider(runtime.provider);
     deps.setSettingsModel(runtime.model);
     deps.setSettingsReasoning(runtime.reasoningEffort);
-    if (errorMessage) deps.setComposerError(errorMessage, target);
-    return false;
+    if (errorMessage) {
+      deps.setComposerError(refusal ? currentText().errorMessage(refusal.error, errorMessage) : errorMessage, target);
+    }
+    return { saved: false, refusal };
   }
 
   async function updateRuntimeSettings(
@@ -131,7 +138,9 @@ export function createSettingsStore(deps: SettingsStoreDeps) {
       deps.setSettingsModel(settings.model);
       deps.setSettingsReasoning(settings.reasoningEffort);
     }
-    return saveRuntimeSettings(settings, updates, null, agentId);
+    const result = await saveRuntimeSettings(settings, updates, null, agentId);
+    if (result.refusal) throw result.refusal.error;
+    return result.saved;
   }
 
   async function selectModel(
@@ -152,13 +161,14 @@ export function createSettingsStore(deps: SettingsStoreDeps) {
     deps.setSettingsModel(model);
     deps.setSettingsReasoning(reasoningEffort);
     if (!persist) return true;
-    return saveRuntimeSettings(
+    const result = await saveRuntimeSettings(
       { provider, model, reasoningEffort },
       accountId === undefined
         ? { provider, model, reasoningEffort }
         : { provider, model, reasoningEffort, providerAccountId: accountId },
       reportComposerError ? currentText().t("composer.error.changeModel") : null,
     );
+    return result.saved;
   }
 
   async function selectAndConfirmModel(

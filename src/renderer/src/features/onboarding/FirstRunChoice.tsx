@@ -10,20 +10,12 @@ import type { OnboardingAvatarVariant } from "./onboarding-avatars";
 import { FREE_PROVIDER } from "./onboarding-provider-rows";
 
 export interface FirstRunChoiceProps {
-  /** The agents over the title. The splash shows the same ones. */
   team: readonly OnboardingAvatarVariant[];
   disabled: boolean;
-  /** The user started free and setup ends when the free provider is ready. */
   loading: boolean;
-  /** Why "Use free models" still waits, or why the free provider failed. Empty when nothing blocks it. */
   reason: string;
   onStartFree: () => void;
-  /** Opens the list of plan providers. */
   onUsePlan: () => void;
-  /**
-   * Starts ticked only in a region that allows analytics by default. A tick by the user thanks them.
-   * An answer accepts the Terms of Service.
-   */
   analytics: boolean;
   onAnalyticsChange: (enabled: boolean) => void;
   onOpenTerms: () => void;
@@ -32,10 +24,6 @@ export interface FirstRunChoiceProps {
 
 const PLAN_LOGOS: readonly ProviderLogoVariant[] = ["codex", "claude", "grok"];
 
-/**
- * The first question of first run: use free models now, or connect an AI subscription the user already has.
- * The two answers are rows of one grouped list, with the same weight.
- */
 export function FirstRunChoice(props: FirstRunChoiceProps) {
   const { t } = useText();
   const reasonId = createUniqueId();
@@ -43,21 +31,7 @@ export function FirstRunChoice(props: FirstRunChoiceProps) {
   const planDetailId = createUniqueId();
   const freeDescribedBy = () => (props.reason ? `${freeDetailId} ${reasonId}` : freeDetailId);
   return (
-    <section class="first-run-choice" aria-labelledby="onboarding-title">
-      <div class="first-run-choice-team" aria-hidden="true">
-        <For each={props.team}>
-          {(member) => (
-            <AgentAvatar
-              seed={member.seed}
-              hue={member.hue}
-              motion="idle"
-              animationOffset={member.animationOffset}
-              followPointer
-              class="first-run-choice-avatar"
-            />
-          )}
-        </For>
-      </div>
+    <>
       <h1 id="onboarding-title" class="first-run-choice-title">
         {t("onboarding.choice.title")}
       </h1>
@@ -65,7 +39,6 @@ export function FirstRunChoice(props: FirstRunChoiceProps) {
       <div class="first-run-choice-rows">
         {/* Self-hosted fork: no free-models row when its provider is removed. */}
         <Show when={!isSelfHostRemovedProvider(FREE_PROVIDER)}>
-          {/* The name is the title alone; the detail line describes the answer. */}
           <Button
             type="button"
             variant="ghost"
@@ -126,6 +99,25 @@ export function FirstRunChoice(props: FirstRunChoiceProps) {
           </p>
         )}
       </Show>
-    </section>
+    </>
+  );
+}
+
+export function FirstRunTeam(props: { team: readonly OnboardingAvatarVariant[] }) {
+  return (
+    <div class="first-run-choice-team" aria-hidden="true">
+      <For each={props.team}>
+        {(member) => (
+          <AgentAvatar
+            seed={member.seed}
+            hue={member.hue}
+            motion="idle"
+            animationOffset={member.animationOffset}
+            followPointer
+            class="first-run-choice-avatar"
+          />
+        )}
+      </For>
+    </div>
   );
 }

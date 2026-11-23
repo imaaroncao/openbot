@@ -2,9 +2,9 @@ import type { PartialTranslation } from "../../../message";
 import type { messages as source } from "../../en/error/auth";
 
 export const messages = {
-  // Errors from the OpenBot account service.
   "error.auth.serviceUnavailable":
     "OpenBot이 계정 서비스에 연결하지 못했어요. API가 실행 중인지 확인한 후 다시 시도해 주세요.",
+  "error.auth.sessionTimeout": "OpenBot이 제시간에 응답하지 않았습니다. 인터넷 연결을 확인한 다음 다시 시도하세요.",
   "error.auth.networkBlocked":
     "이 네트워크의 방화벽 또는 프록시가 OpenBot의 {host} 접속을 막았어요. 네트워크 관리자에게 {host} 허용을 요청한 후 다시 시도해 주세요.",
   "error.auth.signInFirst": "먼저 OpenBot에 로그인해 주세요.",
@@ -19,6 +19,7 @@ export const messages = {
   "error.auth.serviceTimeout": "계정 서비스가 제때 응답하지 않았어요. 다시 시도해 주세요.",
   "error.auth.serviceStatus": "계정 서비스에서 오류({status})가 발생했어요. 나중에 다시 시도해 주세요.",
   "error.auth.invalidHostedServer": "계정 서비스가 올바르지 않은 호스팅 서버를 반환했어요.",
+  "error.auth.invalidServerClaim": "계정 서비스가 올바르지 않은 서버 코드를 반환했어요.",
   "error.auth.codeNotSent": "OpenBot이 로그인 코드를 보내지 못했어요.",
   "error.auth.deliveryTimeout":
     "OpenBot이 전송 여부를 제때 확인하지 못했어요. 코드가 도착할 수도 있으니, 다시 보내기 전에 전송 여부를 확인해 주세요.",

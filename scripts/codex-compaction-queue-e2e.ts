@@ -1,18 +1,3 @@
-// Checks that a message sent while Codex compacts the context waits in the queue and runs after the
-// compaction, and that no message fails because of a compaction (#1766). Runs the real agent
-// service on a temporary profile with a fake Codex app-server that, like Codex 0.160.1, refuses
-// `turn/start` with `ActiveTurnNotSteerable { turn_kind: Compact }` while a compaction turn runs.
-// Four cases: a compaction that ends by itself, one that runs past the start deadline and ends by
-// itself (#3466), one that the run deadline stops, and one that does not stop, so that OpenBot sends
-// a turn that Codex refuses. Then a turn end that fails after it reserved a compaction does not hold
-// the next message (#4960). Then a side thread: the runtime snapshot carries its context, and
-// `compactTaskContext` compacts its session and not the agent's own chat (#3503), and a side thread
-// deleted while it compacts does not hold the agent's own chat. Then a chat whose compactions fail
-// and whose turns grow it each time: OpenBot stops after 2 failures in a row and says so, and the
-// messages still run. One such chat compacted every 19 seconds for 7 hours and used up the plan
-// limit. Last, a usage
-// report that Codex sends while the stop ends it does not reach the closed database (#3808).
-// `bun scripts/codex-compaction-queue-e2e.ts`. Writes .openbot-build/codex-compaction-queue-e2e/report.json.
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -29,11 +14,10 @@ const userData = join(root, "user-data");
 const home = join(root, "home");
 const logPath = join(root, "protocol.jsonl");
 const controlPath = join(root, "control.json");
+const memorySaved = join(root, "memory-saved");
 const fakeCodex = join(root, "codex");
-// Codex must start the compaction in 1 s; a started compaction runs for 10 s at most.
 const COMPACTION_TIMEOUT_MS = 1_000;
 
-// Before the service modules load: the Codex process and the stores read the home folder.
 process.env.HOME = home;
 process.env.CODEX_HOME = join(home, ".codex");
 process.env.OPENBOT_CODEX_PATH = fakeCodex;
@@ -49,11 +33,6 @@ const { MailboxStore } = await import("../src/backend/mailbox-store");
 const { OpenBotDatabase } = await import("../src/backend/openbot-database");
 const { StoredStateFailure } = await import("../src/backend/stored-state-effects");
 
-/**
- * A Codex app-server with the methods that the service calls. Each normal turn reports 90% of the
- * context window, so the next message starts a compaction. `control.json` sets how long the next
- * compaction runs and whether it ignores `turn/interrupt`.
- */
 const FAKE_CODEX = `#!/usr/bin/env node
 const fs = require("node:fs");
 if (process.argv.includes("--version")) {
@@ -62,20 +41,18 @@ if (process.argv.includes("--version")) {
 }
 const log = (entry) => fs.appendFileSync(process.env.OPENBOT_FAKE_CODEX_LOG, JSON.stringify(entry) + "\\n");
 const control = () => JSON.parse(fs.readFileSync(process.env.OPENBOT_FAKE_CODEX_CONTROL, "utf8"));
+const memorySaved = ${JSON.stringify(memorySaved)};
 const config = { config: { mcp_servers: {} }, layers: [{ name: { type: "user", file: "/fake/.codex/config.toml", profile: null }, version: "1", config: { mcp_servers: {} } }] };
 let buffer = "";
 let threads = 0;
 let turns = 0;
-/** threadId -> turns started, for \`growUsage\`. */
 const threadTurns = new Map();
-/** threadId -> { turnId, finish } of the compaction turn that runs. */
 const compacting = new Map();
 process.stdout.on("error", (error) => {
   if (error.code === "EPIPE") process.exit(0);
   throw error;
 });
 const write = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
-// Like a Codex in the middle of a turn, it can report usage while OpenBot stops it (#3808).
 process.on("SIGTERM", () => {
   if (!control().usageOnStop) process.exit(0);
   for (let thread = 1; thread <= threads; thread++) {
@@ -102,28 +79,41 @@ const answer = (message) => {
     case "thread/items/list": return write({ id: message.id, result: { data: [], nextCursor: null } });
     case "thread/read": return write({ id: message.id, result: { thread: { id: params.threadId, turns: [] } } });
     case "turn/start": {
-      // Codex 0.160.1 \`start_or_steer_turn\`: an active compaction turn cannot take input.
       if (compacting.has(params.threadId)) {
         log({ refused: params.threadId });
         return write({ id: message.id, error: { code: -32603, message: "failed to submit turn input: ActiveTurnNotSteerable { turn_kind: Compact }" } });
       }
       const turnId = "turn-" + (++turns);
+      const { editMemory } = control();
+      const memoryWasEdited = editMemory && fs.existsSync(memorySaved);
+      const usedTokens = memoryWasEdited ? 16000 : 90000;
       write({ id: message.id, result: { turn: { id: turnId, status: "inProgress", items: [] } } });
       write({ method: "turn/started", params: { threadId: params.threadId, turn: { id: turnId } } });
-      // \`growUsage\`: each turn adds 6% of the window, more than the growth that allows a new compaction.
       const count = (threadTurns.get(params.threadId) ?? 0) + 1;
       threadTurns.set(params.threadId, count);
-      const used = control().growUsage ? 84000 + 6000 * (count - 1) : 90000;
+      const used = control().growUsage ? 84000 + 6000 * (count - 1) : usedTokens;
       write({ method: "thread/tokenUsage/updated", params: { threadId: params.threadId, turnId, tokenUsage: { total: { totalTokens: used }, last: { totalTokens: used }, modelContextWindow: 100000 } } });
-      setTimeout(() => {
+      const finish = () => {
         const item = { type: "agentMessage", id: "message-" + turnId, text: "Done.", phase: "final_answer" };
         write({ method: "item/completed", params: { threadId: params.threadId, turnId, item } });
         write({ method: "turn/completed", params: { threadId: params.threadId, turn: { id: turnId, status: "completed" } } });
-      }, 50);
+      };
+      if (editMemory && !memoryWasEdited) {
+        const deadline = Date.now() + 10_000;
+        const timer = setInterval(() => {
+          if (fs.existsSync(memorySaved)) {
+            clearInterval(timer);
+            finish();
+          } else if (Date.now() >= deadline) {
+            clearInterval(timer);
+            log({ fixtureError: "Fake Codex timed out waiting for the test to save agent memory." });
+          }
+        }, 20);
+      } else setTimeout(finish, 50);
       return;
     }
     case "thread/compact/start": {
-      const { compactionMs, ignoreInterrupt, compactionStatus } = control();
+      const { compactionMs, ignoreInterrupt, compactionStatus, editMemory, estimate } = control();
       const turnId = "compact-turn-" + (++turns);
       const item = { type: "contextCompaction", id: "compact-item-" + turnId };
       write({ id: message.id, result: {} });
@@ -134,6 +124,16 @@ const answer = (message) => {
         compacting.delete(params.threadId);
         clearTimeout(timer);
         log({ compactionEnded: turnId, threadId: params.threadId, status });
+        if (status === "completed" && editMemory) {
+          const last = { totalTokens: 16000, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0 };
+          const tokenUsage = { total: { totalTokens: 90000 }, last, modelContextWindow: 100000 };
+          write({ method: "thread/tokenUsage/updated", params: { threadId: params.threadId, turnId, tokenUsage } });
+        }
+        if (status === "completed" && estimate) {
+          const last = { totalTokens: 6000, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0 };
+          const tokenUsage = { total: { totalTokens: 90000 }, last, modelContextWindow: 100000 };
+          write({ method: "thread/tokenUsage/updated", params: { threadId: params.threadId, turnId, tokenUsage } });
+        }
         if (status === "completed") write({ method: "item/completed", params: { threadId: params.threadId, turnId, item } });
         write({ method: "turn/completed", params: { threadId: params.threadId, turn: { id: turnId, status } } });
       };
@@ -171,13 +171,13 @@ process.stdin.on("data", (chunk) => {
 });
 `;
 
-/** One line of the fake Codex log: a message that OpenBot sent, or a fact that the fake reports. */
 interface ProtocolEntry {
   method: string | null;
   threadId: string | null;
   turnId: string | null;
   refused: string | null;
   compactionEnded: string | null;
+  fixtureError: string | null;
   status: string | null;
   usageOnStop: number | null;
 }
@@ -206,6 +206,7 @@ const report: { compactionTimeoutMs: number; cases: CaseReport[]; passed: boolea
 const unused = () => Effect.die(new Error("Not used by this check."));
 const browser: AgentBrowserHost = {
   listTabs: () => [],
+  toolCanUseTab: () => false,
   beginTakeover: unused,
   endTakeover: () => {},
   resolveUploadTarget: unused,
@@ -244,12 +245,12 @@ function protocolEntry(value: unknown): ProtocolEntry {
     turnId: getString(params, "turnId"),
     refused: getString(entry, "refused"),
     compactionEnded: getString(entry, "compactionEnded"),
+    fixtureError: getString(entry, "fixtureError"),
     status: getString(entry, "status"),
     usageOnStop: typeof entry.usageOnStop === "number" ? entry.usageOnStop : null,
   };
 }
 
-/** Waits for a state of the service or of the fake Codex. */
 async function waitFor<T>(label: string, read: () => T | null | undefined | false, timeoutMs = 20_000): Promise<T> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -282,9 +283,10 @@ try {
 
   const cases = [
     {
-      name: "compaction ends by itself",
+      name: "compaction ends after a memory edit",
       compactionMs: 400,
       ignoreInterrupt: false,
+      editMemory: true,
       end: "completed",
       interrupt: false,
     },
@@ -322,10 +324,21 @@ try {
         initialMessage: "First message.",
       }),
     );
-    // The first turn reports 90% of the context window.
+    if ("editMemory" in entry) {
+      await waitFor("the first usage report", () =>
+        agents
+          .getRuntimeSnapshot()
+          .contextStates?.some((state) => state.agentId === agent.id && state.usage?.usedTokens === 90000),
+      );
+      agents.createMemory({ agentId: agent.id, text: "A test memory." });
+      await writeFile(memorySaved, "");
+    }
     const threadId = await waitFor("the first turn to end", () => {
       const session = store.activeProviderSession(agent.id)?.externalSessionId;
-      const started = protocol().some((line) => line.method === "turn/start" && line.threadId === session);
+      const entries = protocol();
+      const fixtureError = entries.find((line) => line.fixtureError)?.fixtureError;
+      if (fixtureError) throw new Error(fixtureError);
+      const started = entries.some((line) => line.method === "turn/start" && line.threadId === session);
       const busy = agents
         .listQueue(agent.id)
         .deliveries.some((delivery) => ["queued", "starting", "running"].includes(delivery.status));
@@ -340,6 +353,25 @@ try {
     );
     assert.ok(compactionTurn);
     const statusWhileCompacting = mailbox.getDelivery(deliveryId)?.delivery.status ?? "missing";
+    if ("editMemory" in entry) {
+      const next = await waitFor(
+        "the next turn after compaction",
+        () =>
+          protocol().filter(
+            (line) =>
+              line.threadId === threadId && (line.method === "turn/start" || line.method === "thread/compact/start"),
+          )[2],
+      );
+      assert.equal(
+        next.method,
+        "turn/start",
+        "memory edit: the queue started another compaction instead of the message",
+      );
+      assert.ok(
+        protocol().some((line) => line.method === "thread/resume" && line.threadId === threadId),
+        "memory edit: the session was not marked for reload",
+      );
+    }
 
     const finalStatus = await waitFor("the second message to end", () => {
       const status = mailbox.getDelivery(deliveryId)?.delivery.status;
@@ -372,13 +404,10 @@ try {
     result.passed = true;
   }
 
-  // The end of a turn reserves the compaction, then saves the turn, and only then asks Codex. A save
-  // that failed between the two kept the hold until a restart, and each next message waited (#4960).
   await writeFile(controlPath, JSON.stringify({ compactionMs: 200, ignoreInterrupt: false }));
   const updatePreview = store.updatePreview;
   let previewFailures = 0;
   store.updatePreview = (id, preview) => {
-    // Each turn of the fake Codex answers "Done."; the message itself is the preview of a send.
     if (preview !== "Done." || previewFailures > 0) return updatePreview(id, preview);
     previewFailures += 1;
     return Effect.fail(new StoredStateFailure({ cause: new Error("disk I/O error") }));
@@ -414,7 +443,6 @@ try {
   Object.assign(report, { failedTurnEnd });
   assert.equal(failedTurnEnd.nextMessageStatus, "completed", "failed turn end: the compaction hold stayed");
 
-  // A side thread shows its own context, and Compact compacts only its session (#3503).
   await writeFile(controlPath, JSON.stringify({ compactionMs: 200, ignoreInterrupt: false }));
   const owner = await runCauseEffect(
     agents.createAgent({
@@ -434,7 +462,6 @@ try {
     agents.getRuntimeSnapshot().contextStates?.find((state) => state.agentId === owner.id) ?? null;
   const mainCompactStarts = () =>
     protocol().filter((line) => line.method === "thread/compact/start" && line.threadId === mainSession).length;
-  // The agent's own first turn reports 90% too, so its chat compacts first.
   const mainBefore = await waitFor(
     "the agent's own compaction",
     () => mainContext()?.compaction?.status === "completed" && mainContext(),
@@ -448,7 +475,6 @@ try {
   const threadContext = () =>
     agents.getRuntimeSnapshot().threadContextStates?.find((state) => state.threadId === task.threadId) ?? null;
   const compactions = () => protocol().filter((line) => line.compactionEnded && line.threadId === taskSession);
-  // The thread's turn reports 90% of the window, so the thread compacts at the end of the turn.
   const automatic = await waitFor("the thread's automatic compaction", () => {
     const state = threadContext();
     const idle = agents.listTasks(owner.id).tasks.find((candidate) => candidate.id === task.id)?.state === "idle";
@@ -475,8 +501,6 @@ try {
   assert.equal(sideThread.mainCompactStarts, 0, "side thread: the agent's own chat compacted");
   assert.ok(sideThread.mainContextUnchanged, "side thread: the agent's own context changed");
 
-  // A side thread deleted while Codex compacts its session. No turn of the deleted session ends the
-  // compaction for OpenBot, so its hold stayed, and the agent's own chat waited until a restart.
   await writeFile(controlPath, JSON.stringify({ compactionMs: 5_000, ignoreInterrupt: false }));
   const deleted = await runCauseEffect(agents.startTask({ agentId: owner.id, text: "Thread message." }));
   const deletedSession = await waitFor(
@@ -501,8 +525,6 @@ try {
   Object.assign(report, { deletedThread });
   assert.equal(deletedThread.ownChatStatus, "completed", "deleted thread: the agent's own chat stayed held");
 
-  // Each compaction of this chat fails, and each turn grows the chat by 6% of its window, so the
-  // growth rule allows a new compaction after each turn. Without a limit, each turn compacted again.
   await writeFile(
     controlPath,
     JSON.stringify({ compactionMs: 200, ignoreInterrupt: false, compactionStatus: "failed", growUsage: true }),
@@ -526,7 +548,6 @@ try {
   });
   const failedEnds = () =>
     protocol().filter((line) => line.compactionEnded && line.threadId === failingSession && line.status === "failed");
-  // Each message waits for the compaction that the turn before it started.
   for (const text of ["Second message.", "Third message.", "Fourth message."]) {
     await waitFor(
       "the failing chat to settle",
@@ -556,8 +577,52 @@ try {
   assert.equal(failedCompactions.failedEnds, 2, "failed compactions: the compactions did not fail");
   assert.equal(failedCompactions.stoppedNotices, 1, "failed compactions: one notice");
 
-  // Codex reports usage while the stop ends it. The quit closes the database next, and a late
-  // usage snapshot then failed with "OpenBot database is not initialized." (#3808).
+  await writeFile(
+    controlPath,
+    JSON.stringify({ compactionMs: 200, ignoreInterrupt: false, growUsage: true, estimate: true }),
+  );
+  const full = await runCauseEffect(
+    agents.createAgent({
+      name: "Full after compaction",
+      description: "Checks that compactions that free no space stop.",
+      avatarSeed: "compaction-full",
+      avatarHue: null,
+      initialMessage: "First message.",
+    }),
+  );
+  const fullIdle = () =>
+    !agents
+      .listQueue(full.id)
+      .deliveries.some((delivery) => ["queued", "starting", "running"].includes(delivery.status));
+  const fullSession = await waitFor("the first turn of the full chat", () => {
+    const session = store.activeProviderSession(full.id)?.externalSessionId;
+    return session && fullIdle() ? session : null;
+  });
+  for (const text of ["Second message.", "Third message.", "Fourth message."]) {
+    await waitFor(
+      "the full chat to settle",
+      () =>
+        fullIdle() &&
+        !agents
+          .getRuntimeSnapshot()
+          .contextStates?.some((state) => state.agentId === full.id && state.compaction?.status === "running"),
+    );
+    await runCauseEffect(agents.sendMessage({ agentId: full.id, text }));
+    await waitFor("the message to end", fullIdle);
+  }
+  const ineffectiveCompactions = {
+    compactStarts: protocol().filter((line) => line.method === "thread/compact/start" && line.threadId === fullSession)
+      .length,
+    turns: protocol().filter((line) => line.method === "turn/start" && line.threadId === fullSession).length,
+    notices: errors.filter((error) => error.code === "context_compaction_ineffective" && error.agentId === full.id)
+      .length,
+    deliveries: agents.listQueue(full.id).deliveries.map((delivery) => delivery.status),
+  };
+  Object.assign(report, { ineffectiveCompactions });
+  assert.equal(ineffectiveCompactions.turns, 4, "ineffective compactions: not every message ran");
+  assert.equal(ineffectiveCompactions.compactStarts, 2, "ineffective compactions: OpenBot did not stop after 2");
+  assert.equal(ineffectiveCompactions.notices, 1, "ineffective compactions: one notice");
+
   await writeFile(controlPath, JSON.stringify({ compactionMs: 200, ignoreInterrupt: false, usageOnStop: true }));
   const lateErrors: string[] = [];
   const collect = (error: unknown) => lateErrors.push(error instanceof Error ? error.message : String(error));
@@ -565,8 +630,6 @@ try {
   await runCauseEffect(agents.stop());
   database.close();
   stopped = true;
-  // Not a guessed delay: timers of the same delay fire in creation order, so a usage timer that the
-  // stop started fires before this one.
   await new Promise((done) => setTimeout(done, USAGE_CHANGE_DELAY_MS));
   process.off("uncaughtException", collect);
   const usageOnStop = {

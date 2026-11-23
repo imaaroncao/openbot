@@ -6,6 +6,8 @@ export const messages = defineMessages("queue", {
   "queue.attachment": "Attachment",
   "queue.hold.named": "Waiting - {name} is working in {channel}",
   "queue.hold.unnamed": "Waiting - this agent is working in {channel}",
+  "queue.hold.providerRestart": "Waiting - {provider} restarts when its running tasks end",
+  "queue.hold.signIn": "Waiting - {provider} needs sign-in",
   "queue.item.label": "Queued message {position}: {preview}",
   "queue.item.labelEditing": "Queued message {position}, editing: {preview}",
   "queue.item.editing": "Editing",
@@ -20,6 +22,7 @@ export const messages = defineMessages("queue", {
   "queue.item.steerFallback.providerUnsupported":
     "This provider cannot steer a running turn, so the message waits in the queue.",
   "queue.item.steerFallback.steerFailed": "Steering did not succeed, so the message waits in the queue.",
+  "queue.item.steerFallback.routineRun": "A routine is running now, so the message waits in the queue.",
   "queue.item.runAsTask": "Run in new thread",
   "queue.item.runAsTaskLabel": "Run queued message {position} in a new thread",
   "queue.item.deleteLabel": "Delete queued message {position}",

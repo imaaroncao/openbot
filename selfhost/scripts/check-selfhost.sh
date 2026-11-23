@@ -24,7 +24,7 @@ first_import() {
 first_import src/main/index.ts 'import "./self-host/bootstrap";'
 first_import apps/mobile/src/app/_layout.tsx 'import "@/self-host/network-guard";'
 hook src/main/application-services.ts 'vendorTelemetryEnabled &&' "desktop host analytics switch"
-hook src/main/application-services.ts '"http://127.0.0.1:3100", // self-hosted fork' "no api.openbot.run fallback"
+hook src/main/account-service-access.ts '"http://127.0.0.1:3100", // self-hosted fork' "no api.openbot.run fallback"
 hook src/renderer/src/analytics.ts 'if (!vendorTelemetryEnabled) return false;' "desktop renderer analytics switch"
 hook src/renderer/src/error-reports.ts 'if (!vendorTelemetryEnabled) return;' "desktop error reports switch"
 hook packages/telemetry/src/transport.ts 'if (!vendorTelemetryEnabled) return true;' "OpenPanel transport switch"
@@ -33,8 +33,8 @@ hook apps/mobile/src/features/analytics/failure-reports.ts '!vendorTelemetryEnab
 hook apps/mobile/src/features/auth/api/mobile-auth.ts 'selfHostAccountApiUrl() ?? DISABLED_ACCOUNT_API_URL' "mobile email sign-in server"
 hook apps/mobile/src/features/auth/screens/sign-in-screen.tsx '<SelfHostServerBadge' "mobile server field"
 hook apps/mobile/app.config.js 'applySelfHost(' "mobile bundle IDs / no OTA"
-hook apps/mobile/src/features/push-notifications/push-notifications-native.ios.ts 'EXPO_PUBLIC_OPENBOT_APP_GROUP' "mobile App Group (push)"
-hook apps/mobile/src/features/share/model/share-extension.ts 'EXPO_PUBLIC_OPENBOT_APP_GROUP' "mobile App Group (share)"
+hook apps/mobile/src/shared/lib/app-group.ts 'EXPO_PUBLIC_OPENBOT_APP_GROUP' "mobile App Group (push, share)"
+hook apps/mobile/plugins/shortcuts/ShortcutData.swift '"group.\(Bundle.main.bundleIdentifier' "mobile App Group (Shortcuts)"
 hook src/main/main-window.ts 'openSelfHostServerWindow(' "desktop server menu item"
 hook src/main/provider-use-settings-store.ts 'SELF_HOST_REMOVED_PROVIDERS' "removed providers always off (OpenCode)"
 hook src/renderer/src/features/settings/stores/general-store.ts 'isSelfHostRemovedProvider(provider)' "Settings hides removed providers"
@@ -62,14 +62,17 @@ hook packages/telemetry/src/self-host.ts 'export const vendorPromotionsEnabled: 
 hook src/renderer/src/features/conversation/social-follow-prompt.tsx 'if (!vendorPromotionsEnabled) return;' "no 'Tell a friend' toast"
 hook src/renderer/src/features/conversation/github-star-prompt.tsx 'if (!vendorPromotionsEnabled) return;' "no GitHub star toast"
 hook src/renderer/src/features/sidebar/WorkspaceSidebar.tsx 'vendorPromotionsEnabled &&' "no mobile-app/community sidebar cards"
-hook src/renderer/src/features/web-client/WebWorkspace.tsx 'vendorPromotionsEnabled && !communityCard.dismissed()' "no community card (web)"
+hook src/renderer/src/features/web-client/WebWorkspace.tsx 'vendorPromotionsEnabled && !alertCards.shown() && !communityCard.dismissed()' "no community card (web)"
+hook src/renderer/src/features/web-client/WebPhoneAppScreen.tsx 'if (!vendorPromotionsEnabled) return false;' "no vendor phone-app screen (web)"
 hook src/main/application-services.ts 'registerMacBridgeDriver(() => cuaDriver.mcpServerConfig());' "Mac bridge gets the Computer Use driver"
 hook src/main/main-window.ts 'setMacBridge(item.checked)' "Mac bridge menu switch"
 hook src/main/application-services.ts 'startWorkflowMcp({ workflows: () => workflowRuntime, agents: service })' "workflow MCP server gets the workflows and the agents"
 hook apps/auth-api/src/server/smtp-email-delivery.ts 'Cloudflare Email Service SMTP' "SMTP username may be api_token (Cloudflare)"
 
 # A second `onBeforeRequest` on a session replaces the guard's listener.
-others="$(grep -rn 'webRequest.onBeforeRequest' src/main src/backend --include='*.ts' | grep -v '\.test\.' | grep -v 'src/main/self-host/')"
+# start-recovery-window.ts cancels every request but data: URLs on its own session, which is stricter than the guard.
+others="$(grep -rn 'webRequest.onBeforeRequest' src/main src/backend --include='*.ts' | grep -v '\.test\.' | grep -v 'src/main/self-host/' |
+  grep -v 'src/main/start-recovery-window.ts:.*recoverySession.webRequest.onBeforeRequest')"
 if [[ -n "$others" ]]; then
   echo "✗ upstream registers its own webRequest.onBeforeRequest; it replaces the vendor guard on that session:"
   echo "$others"; status=1

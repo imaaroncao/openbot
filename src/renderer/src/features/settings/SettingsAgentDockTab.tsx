@@ -1,4 +1,9 @@
-import type { AgentDockDisplay, AgentDockDisplayInfo, AgentDockEdge } from "@openbot/contracts/ipc";
+import {
+  AGENT_DOCK_SIZE_LIMITS,
+  type AgentDockDisplay,
+  type AgentDockDisplayInfo,
+  type AgentDockEdge,
+} from "@openbot/contracts/ipc";
 import type { AppTextKey } from "@openbot/i18n";
 import {
   Item,
@@ -14,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
   SettingsSection,
+  SliderField,
   Switch,
   SwitchField,
 } from "@openbot/ui";
@@ -22,6 +28,7 @@ import { AgentAvatar } from "@openbot/ui/features/agents/AgentAvatar";
 import type { JSX } from "@solidjs/web";
 import { createMemo, createSignal, createUniqueId, For, onSettled, Show } from "solid-js";
 import { useI18n } from "../../i18n-context";
+import { usePlatform } from "../../platform";
 import { agentDockPort } from "../agent-dock/agent-dock-port";
 import {
   type AgentDockPlacement,
@@ -30,8 +37,8 @@ import {
   setAgentDockSeats,
   useAgentDockPreference,
 } from "../agent-dock/agent-dock-preference";
+import { XWaylandRestartRow } from "./XWaylandRestartRow";
 
-/** What the tab shows of the active server. The dock of each server has its own agents. */
 export interface AgentDockSettingsModel {
   server: { id: string; name: string } | null;
   agents: readonly ComposerAgent[];
@@ -51,7 +58,9 @@ const EDGE_LABEL = {
 export function SettingsAgentDockTab(props: { model: AgentDockSettingsModel; selectMount?: HTMLElement | undefined }) {
   const i18n = useI18n();
   const preference = useAgentDockPreference();
-  /** The display, the edge and hiding apply to the dock above the other apps. */
+  const platform = usePlatform();
+  const screenSupport = () =>
+    preference().shown && preference().placement === "screen" ? platform.appInfo()?.aboveAppsSupport : undefined;
   const aboveApps = () => preference().shown && preference().placement === "screen";
   const seats = createMemo(() => {
     const server = props.model.server;
@@ -62,7 +71,12 @@ export function SettingsAgentDockTab(props: { model: AgentDockSettingsModel; sel
 
   function setOnDock(serverId: string, agentId: string, onDock: boolean): void {
     const current = seats();
-    setAgentDockSeats(serverId, onDock ? [...current, agentId] : current.filter((id) => id !== agentId));
+    setAgentDockSeats(
+      serverId,
+      onDock
+        ? [...current, { kind: "agent", id: agentId }]
+        : current.filter((seat) => seat.kind !== "agent" || seat.id !== agentId),
+    );
   }
 
   return (
@@ -93,6 +107,16 @@ export function SettingsAgentDockTab(props: { model: AgentDockSettingsModel; sel
               />
             </ItemActions>
           </Item>
+          <XWaylandRestartRow
+            support={screenSupport()}
+            keys={{
+              title: "settings.agentDock.xwayland.title",
+              description: "settings.agentDock.xwayland.description",
+              unsupported: "settings.agentDock.xwayland.unsupported",
+              restart: "settings.agentDock.xwayland.restart",
+            }}
+            onRestart={() => agentDockPort().agentDock.setXWayland({ enabled: true })}
+          />
           <Item data-settings-row="settings.agentDock.display.title" class="settings-modal-row">
             <ItemContent>
               <ItemTitle>{i18n.t("settings.agentDock.display.title")}</ItemTitle>
@@ -124,6 +148,19 @@ export function SettingsAgentDockTab(props: { model: AgentDockSettingsModel; sel
               />
             </ItemActions>
           </Item>
+          <div data-settings-row="settings.agentDock.size.title" class="settings-agent-dock-size">
+            <SliderField
+              label={i18n.t("settings.agentDock.size.title")}
+              description={i18n.t("settings.agentDock.size.description")}
+              value={preference().sizePercent}
+              minValue={AGENT_DOCK_SIZE_LIMITS.min}
+              maxValue={AGENT_DOCK_SIZE_LIMITS.max}
+              step={AGENT_DOCK_SIZE_LIMITS.step}
+              disabled={!aboveApps()}
+              formatValue={(value) => `${value}%`}
+              onChange={(sizePercent) => setAgentDockPreference({ sizePercent })}
+            />
+          </div>
           <SwitchField
             data-settings-row="settings.agentDock.autoHide.title"
             checked={preference().autoHide}
@@ -133,12 +170,28 @@ export function SettingsAgentDockTab(props: { model: AgentDockSettingsModel; sel
             description={i18n.t("settings.agentDock.autoHide.description")}
           />
           <SwitchField
+            data-settings-row="settings.agentDock.edgeStrip.title"
+            checked={preference().edgeStrip}
+            disabled={!aboveApps() || !preference().autoHide}
+            onChange={(edgeStrip) => setAgentDockPreference({ edgeStrip })}
+            label={i18n.t("settings.agentDock.edgeStrip.title")}
+            description={i18n.t("settings.agentDock.edgeStrip.description")}
+          />
+          <SwitchField
             data-settings-row="settings.agentDock.results.title"
             checked={preference().results}
             disabled={!preference().shown}
             onChange={(results) => setAgentDockPreference({ results })}
             label={i18n.t("settings.agentDock.results.title")}
             description={i18n.t("settings.agentDock.results.description")}
+          />
+          <SwitchField
+            data-settings-row="settings.agentDock.activeSeats.title"
+            checked={preference().activeSeats}
+            disabled={!preference().shown}
+            onChange={(activeSeats) => setAgentDockPreference({ activeSeats })}
+            label={i18n.t("settings.agentDock.activeSeats.title")}
+            description={i18n.t("settings.agentDock.activeSeats.description")}
           />
         </ItemGroup>
       </SettingsSection>
@@ -164,7 +217,7 @@ export function SettingsAgentDockTab(props: { model: AgentDockSettingsModel; sel
                 {(agent) => (
                   <DockAgentRow
                     agent={agent}
-                    onDock={seats().includes(agent.id)}
+                    onDock={seats().some((seat) => seat.kind === "agent" && seat.id === agent.id)}
                     disabled={!preference().shown}
                     onChange={(onDock) => setOnDock(server().id, agent.id, onDock)}
                   />
@@ -201,7 +254,6 @@ function DockAgentRow(props: {
   );
 }
 
-/** A select of a few fixed choices. */
 function ChoiceSelect<T extends string>(props: {
   value: T;
   choices: readonly T[];
@@ -246,10 +298,6 @@ function sameKeys(before: string[], after: string[]): boolean {
   return before.length === after.length && before.every((key, index) => key === after[index]);
 }
 
-/**
- * The display of the dock above the other apps. The list is read again each time it opens, so a display
- * connected after the tab opened is there. A saved display that is not connected stays as a choice.
- */
 function DisplaySelect(props: {
   value: AgentDockDisplay;
   disabled: boolean;
@@ -273,7 +321,6 @@ function DisplaySelect(props: {
     };
   });
 
-  // A new array makes Kobalte choose again, so the list changes only when its keys change.
   const options = createMemo(
     (): string[] => {
       const listed = displays().map((display) => `display:${display.id}`);

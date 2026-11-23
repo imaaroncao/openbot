@@ -227,6 +227,7 @@ async function agentTool(name: string, args: unknown, service: AgentService): Pr
       service.listModels(),
       service.preferredProvider(),
       (provider) => service.getStatus().providers?.find((row) => row.id === provider)?.accounts,
+      service.getStatus().providers ?? [],
       {
         ...request,
         inUse: service.listAgents().map((agent) => ({ provider: agent.provider, model: agent.model })),

@@ -1,30 +1,49 @@
+import type { AgentProviderRef } from "@openbot/contracts/agent-providers";
 import { chatVisualReply } from "@openbot/contracts/chat-visual";
+import { isNarrationItemId, showsNarration } from "@openbot/contracts/conversation-narration";
 import { sortConversationMessages } from "@openbot/contracts/conversation-order";
 import { itemTypeCountsAsUnread } from "@openbot/contracts/conversation-read";
+import { coordinatorText } from "@openbot/contracts/coordinator-text";
 import type {
   AgentExchangeSummary,
   AttachmentSummary,
   ChannelMessage,
   ChannelRoutingConversationEvent,
+  ChannelTask,
+  ConversationMemoryChange,
   ConversationMessage,
   ConversationMessageSender,
   ConversationQuestionPrompt,
   ConversationReaction,
+  ConversationSubagent,
   ImageGenerationInfo,
   QueueDelivery,
   RoutineConversationEventAction,
   RoutineRunStatus,
+  VideoGenerationInfo,
 } from "@openbot/contracts/ipc";
 import {
+  CONVERSATION_MEMORY_CHANGES_ITEM_TYPE,
   CONVERSATION_PLAN_ITEM_TYPE,
+  CONVERSATION_SUBAGENTS_ITEM_TYPE,
+  channelRoutineRequest,
   channelRoutingConversationEvent,
+  isAgentAnswer,
   isContextResetMarker,
+  marketplaceSuggestionEvent,
+  mcpSignInEvent,
   parseConversationPlanText,
+  ROUTINE_QUIET_ANSWER_ITEM_TYPE,
+  replacedConversationPlans,
   routineConversationEvent,
   routineRunConversationEvent,
+  SETTING_LINK_ITEM_TYPE_PREFIX,
 } from "@openbot/contracts/ipc";
 import type { ConversationUiBlock } from "@openbot/contracts/ui-blocks";
 import type { MobileTextKey } from "@openbot/i18n/mobile";
+import { MOBILE_PLUGINS } from "@/features/marketplace/model/plugin-catalog.generated";
+import { isMobileConnectorId } from "@/features/servers/model/connectors";
+import { thinkingRowId } from "./turn-thinking";
 
 export type RoutineMarkerEvent = RoutineConversationEventAction | RoutineRunStatus;
 
@@ -46,12 +65,11 @@ export type ChatMessage =
       id: string;
       kind: "exchange";
       exchange: AgentExchangeSummary;
-      /** Incoming files show under the marker, so the marker keeps a row of its own. */
       standalone: boolean;
     }
-  /** Where a new chat started: the agent does not see the messages above it. */
   | { id: string; kind: "context-reset" }
-  /** A routine created, changed, deleted, or run by the agent. The label matches the desktop marker. */
+  | { id: string; kind: "app-suggestion"; appId: string }
+  | { id: string; kind: "mcp-sign-in"; mcpServerId: string }
   | {
       id: string;
       kind: "routine";
@@ -59,15 +77,12 @@ export type ChatMessage =
       label: MobileTextKey;
       routineId: string;
       routineName: string;
-      /** When the host stored the marker. Not `createdAt`: a marker gets no day label. */
-      storedAt?: string;
     }
   | {
       id: string;
       kind: "question";
       turnId: string | undefined;
       prompt: ConversationQuestionPrompt;
-      /** The block that the prompt is the fallback of, when the host sends it. */
       uiBlock?: ConversationUiBlock | undefined;
     }
   | {
@@ -75,12 +90,7 @@ export type ChatMessage =
       kind: "message";
       author: "agent" | "user";
       speaker?: ChannelMessage["author"];
-      /** Another person who wrote this message in an agent chat. The reader's own messages have none. */
       sender?: ConversationMessageSender;
-      /**
-       * The host records the reader as the sender. A member can delete these messages. A message from
-       * before senders were kept shows as the reader's own but is not `mine`.
-       */
       mine?: boolean;
       superseded?: boolean;
       body: string;
@@ -88,45 +98,51 @@ export type ChatMessage =
       status?: ConversationMessage["status"];
       replyToMessageId?: string | null;
       attachments?: AttachmentSummary[];
-      /** A visual reply: its one attachment is an HTML page that the chat shows, at this height. */
       visual?: { height?: number };
-      /** An image the agent is generating or generated. Its first attachment is the image. */
       imageGeneration?: ImageGenerationInfo;
-      /** Why the turn of a failed user message stopped, as the host reported it. */
+      videoGeneration?: VideoGenerationInfo;
       failureReason?: string;
-      /** When the host stored the message. A message that waits on the phone has none. */
       createdAt?: string;
-      /** The reactions on the message: the reader's own and the agents'. */
       reactions?: readonly ConversationReaction[];
+      progress?: true;
     }
-  /** The task list of an agent plan. The header is `heading` when set, else a catalog title. */
   | {
       id: string;
       kind: "plan";
       heading: string | null;
-      /** An explanation too long for the header. */
       explanation: string | null;
       stopped: boolean;
       steps: { id: string; text: string; state: ChatPlanStepState }[];
     }
-  | { id: string; kind: "thinking"; turnId: string | undefined; steps: { id: string; text: string }[] };
+  | {
+      id: string;
+      kind: "subagents";
+      subagents: ConversationSubagent[];
+    }
+  | {
+      id: string;
+      kind: "memory-changes";
+      changes: ConversationMemoryChange[];
+    }
+  | {
+      id: string;
+      kind: "thinking";
+      turnId: string | undefined;
+      steps: { id: string; text: string; progress?: true; createdAt?: string }[];
+    };
 
-/** A message that shows as a bubble: text, files or a generated image. */
 export type ChatBubbleMessage = Extract<ChatMessage, { kind: "message" }>;
 
 export type ExchangeMarker = Extract<ChatMessage, { kind: "exchange" }>;
 
 export type RoutineMarker = Extract<ChatMessage, { kind: "routine" }>;
 
-/** An older host sends only the reader's own reaction, in `reaction`. */
 function messageReactions(message: ConversationMessage): readonly ConversationReaction[] | undefined {
   if (message.reactions?.length) return message.reactions;
   return message.reaction ? [{ emoji: message.reaction, actor: { kind: "user" } }] : undefined;
 }
 
-/** Consecutive messages to and from other agents, drawn as one row as on desktop. */
 export interface ExchangeGroup {
-  /** The ID of the first marker, so the row stays the same while the exchange grows. */
   id: string;
   kind: "exchange-group";
   exchanges: ExchangeMarker[];
@@ -134,7 +150,6 @@ export interface ExchangeGroup {
 
 export interface PendingChatMessage {
   message: Extract<ChatMessage, { kind: "message" }>;
-  /** The host rows drawn when the send started. Set only while the send waits for its receipt. */
   baseline: ReadonlySet<string> | null;
   serverId: string | null;
 }
@@ -145,7 +160,6 @@ export function indexChatMessages(
   references: readonly ChatMessage[] = [],
 ) {
   const index = new Map([...references, ...messages].map((message) => [message.id, message]));
-  // Reply references use host IDs even when a delivered bubble keeps its local render key.
   for (const [hostId, localId] of aliases) {
     const message = index.get(localId);
     if (message) index.set(hostId, message);
@@ -153,20 +167,17 @@ export function indexChatMessages(
   return index;
 }
 
-/** The host rows, then the messages the host has not drawn yet, in their send order. */
 export function presentChatMessages(
   messages: ChatMessage[],
   pending: readonly PendingChatMessage[],
   aliases: ReadonlyMap<string, string>,
 ): ChatMessage[] {
-  // Events can precede the receipt. Wait for its ID rather than matching by text,
-  // which could incorrectly merge another member's identical message.
+  if (pending.length === 0 && aliases.size === 0) return messages;
   const baseline = pending.find((item) => !item.serverId && item.baseline)?.baseline;
   const visible = baseline ? messages.filter((message) => baseline.has(message.id)) : messages;
   const received = new Map<string, PendingChatMessage["message"]>();
   for (const item of pending) if (item.serverId) received.set(item.serverId, item.message);
   const result = visible.map((message) => {
-    // Keep the local image mounted until the caller caches the final attachment IDs.
     const local = received.get(message.id);
     if (local) return local;
     const alias = aliases.get(message.id);
@@ -183,12 +194,81 @@ export function presentChatMessages(
   return result;
 }
 
-// The reader decides whether a user message is their own, so a bubble is kept for one reader.
-const projectedBubbles = new WeakMap<ConversationMessage, { readerKey: string; bubble: ChatMessage }>();
+const projectedBubbles = new WeakMap<
+  ConversationMessage,
+  { readerKey: string; replaced: boolean; bubble: ChatMessage }
+>();
 const projectedExchanges = new WeakMap<ConversationMessage, ChatMessage>();
 const projectedQuestions = new WeakMap<ConversationMessage, ChatMessage>();
+const projectedMemoryChanges = new WeakMap<ConversationMessage, ChatMessage>();
 const projectedRoutines = new WeakMap<ConversationMessage, ChatMessage>();
 const projectedResets = new WeakMap<ConversationMessage, ChatMessage>();
+const projectedUpdates = new WeakMap<ConversationMessage, ChatMessage>();
+
+export interface ProgressUpdates {
+  provider: (agentId: string | undefined) => AgentProviderRef | undefined;
+}
+
+function shownProgressUpdate(
+  message: ConversationMessage,
+  provider: AgentProviderRef | undefined,
+  shown: Set<string>,
+): boolean {
+  return (
+    message.status !== "streaming" && isNarrationItemId(message.id, provider) && showsNarration(message.text, shown)
+  );
+}
+
+function turnShownNotes(): (turnKey: string) => Set<string> {
+  const byTurn = new Map<string, Set<string>>();
+  return (turnKey) => {
+    let shown = byTurn.get(turnKey);
+    if (!shown) {
+      shown = new Set();
+      byTurn.set(turnKey, shown);
+    }
+    return shown;
+  };
+}
+
+function answerTimes(messages: Iterable<ConversationMessage>): ReadonlyMap<string, string> {
+  const times = new Map<string, string>();
+  for (const message of messages)
+    if (message.turnId && isAgentAnswer(message) && !times.has(message.turnId))
+      times.set(message.turnId, message.createdAt);
+  return times;
+}
+
+function beforeAnswer(message: ConversationMessage, answered: ReadonlyMap<string, string>): boolean {
+  const answer = message.turnId ? answered.get(message.turnId) : undefined;
+  return !answer || message.createdAt <= answer;
+}
+
+function progressBubble(id: string, message: ConversationMessage): Extract<ChatMessage, { kind: "message" }> {
+  return {
+    id,
+    kind: "message",
+    author: "agent",
+    body: message.text,
+    streaming: false,
+    status: message.status,
+    createdAt: message.createdAt,
+    progress: true,
+  };
+}
+
+const projectedSuggestions = new WeakMap<ConversationMessage, ChatMessage>();
+const projectedSignIns = new WeakMap<ConversationMessage, ChatMessage>();
+
+function suggestedApp(message: ConversationMessage): string | null {
+  const appId = marketplaceSuggestionEvent(message)?.appId;
+  if (!appId) return null;
+  return isMobileConnectorId(appId) || MOBILE_PLUGINS.some((plugin) => plugin.slug === appId) ? appId : null;
+}
+
+function settingLinkMessage(message: ConversationMessage): boolean {
+  return message.author === "system" && message.itemType?.startsWith(SETTING_LINK_ITEM_TYPE_PREFIX) === true;
+}
 
 const ROUTINE_RUN_LABELS = {
   queued: "mobile.chat.routine.invoked",
@@ -206,7 +286,6 @@ const ROUTINE_ACTION_LABELS = {
   deleted: "mobile.chat.routine.deleted",
 } as const satisfies Record<RoutineConversationEventAction, MobileTextKey>;
 
-/** The routine marker of a host message. A run has one marker per state; `runId` groups them. */
 function routineMarker(message: ConversationMessage) {
   const lifecycle = routineConversationEvent(message);
   if (lifecycle) {
@@ -238,7 +317,6 @@ function routineMarker(message: ConversationMessage) {
   return null;
 }
 
-/** Like desktop, a run shows only its latest state. Returns the ID of the latest message of each run. */
 function latestRoutineRunMessages(messages: readonly ConversationMessage[]) {
   const latest = new Map<string, string>();
   for (const message of messages) {
@@ -258,19 +336,13 @@ function projectRoutineMarker(message: ConversationMessage, latestRuns: Readonly
     label: marker.label,
     routineId: marker.routineId,
     routineName: marker.routineName,
-    storedAt: message.createdAt,
   }));
 }
 const aliasedMessages = new WeakMap<ChatMessage, ChatMessage>();
 
 const PLAN_HEADING_LIMIT = 80;
 
-/**
- * The task list of a `plan` message, as desktop shows it. A released host sends only the checklist
- * text, so the plan is read back from it. The last line of a streaming text can be incomplete, so
- * it is left out. Returns null when the text is not a checklist; the message then shows as text.
- */
-function projectPlan(message: ConversationMessage): ChatMessage | null {
+function projectPlan(message: ConversationMessage, replaced: boolean): ChatMessage | null {
   if (message.author !== "assistant" || message.itemType !== CONVERSATION_PLAN_ITEM_TYPE) return null;
   const streaming = message.status === "streaming";
   const lastLine = message.text.lastIndexOf("\n");
@@ -279,7 +351,6 @@ function projectPlan(message: ConversationMessage): ChatMessage | null {
     parseConversationPlanText(message.text) ??
     (streaming && lastLine > 0 ? parseConversationPlanText(message.text.slice(0, lastLine)) : null);
   if (!plan?.steps.length) return null;
-  // A step runs only while its turn runs. After the turn ends, an unfinished step is not started.
   const steps = plan.steps.map((step) => {
     const state: ChatPlanStepState =
       step.status === "completed" ? "done" : step.status === "inProgress" && streaming ? "active" : "pending";
@@ -292,12 +363,19 @@ function projectPlan(message: ConversationMessage): ChatMessage | null {
     heading: short ? plan.explanation : null,
     explanation: short ? null : plan.explanation,
     stopped:
-      (message.status === "interrupted" || message.status === "failed") && steps.some((step) => step.state !== "done"),
+      !replaced &&
+      (message.status === "interrupted" || message.status === "failed") &&
+      steps.some((step) => step.state !== "done"),
     steps,
   };
 }
 
-/** Reuse the item projected from the same host message, so memoized rows skip unchanged items. */
+function projectSubagents(message: ConversationMessage): ChatMessage | null {
+  if (message.author !== "assistant" || message.itemType !== CONVERSATION_SUBAGENTS_ITEM_TYPE) return null;
+  if (!message.subagents?.length) return null;
+  return { id: message.id, kind: "subagents", subagents: message.subagents };
+}
+
 function projectedMarker(
   cache: WeakMap<ConversationMessage, ChatMessage>,
   message: ConversationMessage,
@@ -311,44 +389,43 @@ function projectedMarker(
   return item;
 }
 
-/** The order of the last sorted transcript, and the fields that decided it. */
-let lastOrder: { key: string; ids: string[] } | null = null;
+let lastOrder: { input: readonly ConversationMessage[]; order: number[] } | null = null;
 
-/**
- * The sort reads only these fields. A streamed chunk changes only text and status, so the order of
- * the previous frame applies and the transcript is not sorted again.
- */
+function sameSortFields(before: ConversationMessage | undefined, after: ConversationMessage): boolean {
+  if (before === after) return true;
+  return (
+    before !== undefined &&
+    before.id === after.id &&
+    before.turnId === after.turnId &&
+    before.createdAt === after.createdAt &&
+    before.author === after.author &&
+    before.itemType === after.itemType &&
+    before.exchange?.direction === after.exchange?.direction
+  );
+}
+
 export function sortedConversationMessages(messages: readonly ConversationMessage[]) {
-  const key = messages
-    .map(
-      (message) =>
-        `${message.id}\u0000${message.turnId ?? ""}\u0000${message.createdAt}\u0000${message.author}\u0000${message.itemType ?? ""}\u0000${message.exchange?.direction ?? ""}`,
-    )
-    .join("\u0001");
-  if (lastOrder?.key === key) {
-    const byId = new Map(messages.map((message) => [message.id, message]));
-    const ordered = lastOrder.ids.flatMap((id) => byId.get(id) ?? []);
-    if (byId.size === messages.length && ordered.length === messages.length) return ordered;
+  const last = lastOrder;
+  if (last && last.input.length === messages.length) {
+    const { input } = last;
+    if (messages.every((message, index) => sameSortFields(input[index], message))) {
+      lastOrder = { input: messages, order: last.order };
+      return last.order.flatMap((index) => messages[index] ?? []);
+    }
   }
   const sorted = sortConversationMessages([...messages]);
-  lastOrder = { key, ids: sorted.map((message) => message.id) };
+  const indices = new Map(messages.map((message, index) => [message, index]));
+  const order = sorted.flatMap((message) => indices.get(message) ?? []);
+  lastOrder = order.length === messages.length && indices.size === messages.length ? { input: messages, order } : null;
   return sorted;
 }
 
-/**
- * `memberId` is the reader's membership on the server. A user message that another member wrote
- * gets their name. A message with no sender, from before senders
- * were kept, stays the reader's own, as it always showed.
- *
- * `accountUserId` is the reader's account. A host with no membership for its own user stamps
- * `local-user:<account>`, so that sender is also the reader when they read their own server.
- */
 export function projectChatMessages(
   messages: ConversationMessage[],
   memberId: string | null = null,
   accountUserId: string | null = null,
+  progressUpdates?: ProgressUpdates,
 ): ChatMessage[] {
-  // A server that is still connecting has an empty membership, which names no reader.
   const reader = memberId || null;
   const readerAccount = accountUserId ? `local-user:${accountUserId}` : null;
   const readerKey = `${reader ?? ""}\n${readerAccount ?? ""}`;
@@ -356,18 +433,48 @@ export function projectChatMessages(
   const thinkingByTurn = new Map<string, Extract<ChatMessage, { kind: "thinking" }>>();
   const sorted = sortedConversationMessages(messages);
   const latestRuns = latestRoutineRunMessages(sorted);
+  const answered = progressUpdates ? answerTimes(sorted) : undefined;
+  const shownNotes = turnShownNotes();
+  const replacedIds = replacedConversationPlans(
+    sorted.map((message) => ({
+      id: message.id,
+      turnId: message.turnId,
+      agent:
+        message.author === "assistant" && !message.exchange && !message.routine ? (message.senderAgentId ?? "") : null,
+      plan: message.itemType === CONVERSATION_PLAN_ITEM_TYPE,
+    })),
+  );
   for (const message of sorted) {
-    // Routine events are system messages, skipped below. Like desktop, a routine instruction shows only as its marker.
     const routine = projectRoutineMarker(message, latestRuns);
     if (routine) result.push(routine);
     if (message.routine) continue;
-    // A new chat is a system message too. Like desktop, it shows as a divider, not as its text.
     if (isContextResetMarker(message)) {
       result.push(
         projectedMarker(projectedResets, message, () => ({ id: `context-reset:${message.id}`, kind: "context-reset" })),
       );
       continue;
     }
+    if (marketplaceSuggestionEvent(message)) {
+      const appId = suggestedApp(message);
+      if (appId)
+        result.push(
+          projectedMarker(projectedSuggestions, message, () => ({ id: message.id, kind: "app-suggestion", appId })),
+        );
+      continue;
+    }
+    const signIn = mcpSignInEvent(message);
+    if (signIn) {
+      result.push(
+        projectedMarker(projectedSignIns, message, () => ({
+          id: message.id,
+          kind: "mcp-sign-in",
+          mcpServerId: signIn.mcpServerId,
+        })),
+      );
+      continue;
+    }
+    if (settingLinkMessage(message)) continue;
+    if (message.itemType === ROUTINE_QUIET_ANSWER_ITEM_TYPE) continue;
     if (message.delivery?.status === "queued" || message.delivery?.status === "cancelled") continue;
     if (message.exchange) {
       const { exchange } = message;
@@ -379,8 +486,6 @@ export function projectChatMessages(
           standalone: exchange.direction === "incoming" && Boolean(message.attachments?.length),
         })),
       );
-      // Match desktop: exchanges have markers, not another agent's text bubble.
-      // Incoming attachments remain visible below their marker.
       if (message.exchange.direction !== "incoming" || !message.attachments?.length) continue;
     }
     if (message.questionPrompt) {
@@ -396,9 +501,19 @@ export function projectChatMessages(
       );
       continue;
     }
-    // A generation has no text or attachment until its image arrives, and it still needs its placeholder.
     if (
-      (!message.text.trim() && !message.attachments?.length && !message.imageGeneration) ||
+      message.author === "system" &&
+      message.itemType === CONVERSATION_MEMORY_CHANGES_ITEM_TYPE &&
+      message.memoryChanges?.length
+    ) {
+      const changes = message.memoryChanges;
+      result.push(
+        projectedMarker(projectedMemoryChanges, message, () => ({ id: message.id, kind: "memory-changes", changes })),
+      );
+      continue;
+    }
+    if (
+      (!message.text.trim() && !message.attachments?.length && !message.imageGeneration && !message.videoGeneration) ||
       message.author === "system"
     )
       continue;
@@ -406,50 +521,104 @@ export function projectChatMessages(
       const key = message.turnId ?? message.id;
       let thinking = thinkingByTurn.get(key);
       if (!thinking) {
-        thinking = { id: `thinking:${key}`, kind: "thinking", turnId: message.turnId, steps: [] };
+        thinking = { id: thinkingRowId(key), kind: "thinking", turnId: message.turnId, steps: [] };
         thinkingByTurn.set(key, thinking);
         result.push(thinking);
       }
-      thinking.steps.push({ id: message.id, text: message.text });
+      const update =
+        progressUpdates && answered
+          ? beforeAnswer(message, answered) &&
+            shownProgressUpdate(message, progressUpdates.provider(undefined), shownNotes(key))
+          : false;
+      thinking.steps.push({
+        id: message.id,
+        text: message.text,
+        createdAt: message.createdAt,
+        ...(update ? { progress: true as const } : {}),
+      });
+      if (update) result.push(projectedMarker(projectedUpdates, message, () => progressBubble(message.id, message)));
     } else {
       const cached = projectedBubbles.get(message);
-      let bubble = cached?.readerKey === readerKey ? cached.bubble : undefined;
+      const replaced = replacedIds.has(message.id);
+      let bubble = cached?.readerKey === readerKey && cached.replaced === replaced ? cached.bubble : undefined;
       if (!bubble) {
         const sender = message.author === "user" ? message.senderMember : undefined;
         const ownSender = sender !== undefined && (sender.id === reader || sender.id === readerAccount);
         const otherMember = sender !== undefined && reader !== null && !ownSender;
-        bubble = projectPlan(message) ?? {
-          id: message.id,
-          kind: "message",
-          // Another person's message stays a person's bubble, on the right, and adds their name.
-          author: message.author === "user" ? "user" : "agent",
-          ...(otherMember ? { sender } : {}),
-          ...(ownSender ? { mine: true } : {}),
-          body: message.exchange ? "" : message.text,
-          streaming: message.status === "streaming",
-          status: message.status,
-          attachments: message.attachments,
-          ...visualReply(message),
-          imageGeneration: message.imageGeneration,
-          replyToMessageId: message.replyToMessageId,
-          createdAt: message.createdAt,
-          reactions: messageReactions(message),
-        };
-        projectedBubbles.set(message, { readerKey, bubble });
+        bubble = projectPlan(message, replaced) ??
+          projectSubagents(message) ?? {
+            id: message.id,
+            kind: "message",
+            author: message.author === "user" ? "user" : "agent",
+            ...(otherMember ? { sender } : {}),
+            ...(ownSender ? { mine: true } : {}),
+            body: message.exchange ? "" : message.text,
+            streaming: message.status === "streaming",
+            status: message.status,
+            attachments: message.attachments,
+            ...visualReply(message),
+            imageGeneration: message.imageGeneration,
+            videoGeneration: message.videoGeneration,
+            replyToMessageId: message.replyToMessageId,
+            createdAt: message.createdAt,
+            reactions: messageReactions(message),
+          };
+        projectedBubbles.set(message, { readerKey, replaced, bubble });
       }
       result.push(bubble);
     }
   }
-  return result;
+  return progressUpdates ? withStepsAfterUpdates(result, thinkingByTurn) : result;
+}
+
+function withStepsAfterUpdates(
+  rows: ChatMessage[],
+  thinkingByTurn: ReadonlyMap<string, Extract<ChatMessage, { kind: "thinking" }>>,
+): ChatMessage[] {
+  const afterUpdate = new Map<string, ChatMessage>();
+  const moved = new Set<ChatMessage>();
+  for (const thinking of thinkingByTurn.values()) {
+    const lastUpdate = thinking.steps.findLast((step) => step.progress)?.id;
+    if (!lastUpdate) continue;
+    afterUpdate.set(lastUpdate, thinking);
+    moved.add(thinking);
+  }
+  if (moved.size === 0) return rows;
+  const placed: ChatMessage[] = [];
+  for (const row of rows) {
+    if (moved.has(row)) continue;
+    placed.push(row);
+    const thinking = afterUpdate.get(row.id);
+    if (thinking) placed.push(thinking);
+  }
+  return placed;
+}
+
+export function withQuestionContext(rows: ChatMessage[], activeTurnId: string | null | undefined): ChatMessage[] {
+  if (!activeTurnId) return rows;
+  const at = rows.findLastIndex(
+    (row) => row.kind === "question" && !row.prompt.resolution && row.turnId === activeTurnId,
+  );
+  if (at < 0) return rows;
+  const thinking = rows.findLast((row) => row.kind === "thinking" && row.turnId === activeTurnId);
+  if (thinking?.kind !== "thinking") return rows;
+  const step = thinking.steps.findLast((item) => item.text.trim() && isNarrationItemId(item.id, "codex"));
+  if (!step || step.progress) return rows;
+  const context: ChatBubbleMessage = {
+    id: step.id,
+    kind: "message",
+    author: "agent",
+    body: step.text,
+    streaming: false,
+    status: "completed",
+    ...(step.createdAt ? { createdAt: step.createdAt } : {}),
+    progress: true,
+  };
+  return [...rows.slice(0, at), context, ...rows.slice(at)];
 }
 
 const exchangeGroups = new WeakMap<ExchangeMarker, ExchangeGroup>();
 
-/**
- * Joins consecutive messages to and from other agents into one row, as desktop does, so a long
- * exchange between agents does not fill the chat. Give it the rows without thinking steps: desktop
- * does not draw them between the markers either. The messages stay unchanged.
- */
 export function groupExchangeMarkers<T extends ChatMessage>(messages: readonly T[]): (T | ExchangeGroup)[] {
   const rows: (T | ExchangeGroup)[] = [];
   let run: (T & ExchangeMarker)[] = [];
@@ -470,49 +639,34 @@ export function groupExchangeMarkers<T extends ChatMessage>(messages: readonly T
   return rows;
 }
 
-/** Consecutive completed runs of one routine, drawn as one row as on desktop. */
 export interface RoutineRunGroup {
-  /** The ID of the first run, so the row stays the same while new runs join. */
   id: string;
   kind: "routine-run-group";
-  /** The name of the newest run. */
-  routineName: string;
+  routineName: string | null;
   runs: RoutineMarker[];
 }
 
-/** A row that holds several markers. */
 export type ChatMarkerGroup = ExchangeGroup | RoutineRunGroup;
 
 type ChatRow = ChatMessage | ChatMarkerGroup;
 
-/** The markers of a group row, or the row itself. */
 function rowMarkers(row: ChatRow): readonly { id: string }[] {
   return row.kind === "exchange-group" ? row.exchanges : row.kind === "routine-run-group" ? row.runs : [row];
 }
 
 const routineRunGroups = new WeakMap<RoutineMarker, RoutineRunGroup>();
+const routineRowIds = new Map<string, string>();
 
-/** The rows where a routine run group must stop, so a line or a focused run keeps a row of its own. */
 export interface RoutineRunGroupStops {
-  /** The NEW line shows above the first row of these messages. */
   unreadMessageIds?: ReadonlySet<string> | null;
-  /** The message that the chat opens at, from a search result. */
   focusMessageId?: string | null;
-  /** The row that the branch divider follows. */
   branchRowId?: string | null;
 }
 
-/**
- * Joins consecutive completed runs of one routine into one row, as desktop does, so a routine that
- * runs often does not fill the chat. Any other row stops the group, and so does a run that did not
- * complete. A group also stops at a new day, at the first unread row, at the branch divider, and
- * around the run that the chat opens at.
- */
 export function groupRoutineRunMarkers<T extends ChatRow>(
   rows: readonly T[],
   { unreadMessageIds = null, focusMessageId = null, branchRowId = null }: RoutineRunGroupStops = {},
 ): (T | RoutineRunGroup)[] {
-  // A new group starts at each of these rows.
   const starts = new Set<number>();
   if (unreadMessageIds) starts.add(firstChatRowOf(rows, unreadMessageIds));
   if (focusMessageId) {
@@ -524,76 +678,81 @@ export function groupRoutineRunMarkers<T extends ChatRow>(
     if (branch >= 0) starts.add(branch + 1);
   }
   const result: (T | RoutineRunGroup)[] = [];
+  const markerIds = new Set(rows.flatMap((row) => (row.kind === "routine" ? [row.id] : [])));
+  const usedIds = new Set<string>();
   let run: (T & RoutineMarker)[] = [];
   const closeRun = () => {
     const [first] = run;
-    if (first) result.push(run.length === 1 ? first : routineRunGroup(first, run));
+    if (!first) return;
+    const id = run.length === 1 ? first.id : routineRowId(first, run, markerIds, usedIds);
+    usedIds.add(id);
+    for (const marker of run) routineRowIds.set(marker.id, id);
+    result.push(run.length === 1 ? first : routineRunGroup(id, first, run));
     run = [];
   };
   rows.forEach((row, index) => {
-    if (!completedRun(row)) {
+    if (!groupableRoutine(row)) {
       closeRun();
       result.push(row);
       return;
     }
-    const previous = run.at(-1);
-    if (
-      previous &&
-      (starts.has(index) || previous.routineId !== row.routineId || startsDay(previous.storedAt, row.storedAt))
-    )
-      closeRun();
+    if (starts.has(index)) closeRun();
     run.push(row);
   });
   closeRun();
   return result;
 }
 
-/** Whether `current` is on a later local day than `previous`. A marker with no time starts no day. */
-function startsDay(previous: string | undefined, current: string | undefined): boolean {
-  if (!previous || !current) return false;
-  const [before, after] = [new Date(previous), new Date(current)];
-  if (Number.isNaN(before.getTime()) || Number.isNaN(after.getTime())) return false;
-  return before.toDateString() !== after.toDateString();
+const LIVE_ROUTINE_EVENTS: ReadonlySet<RoutineMarkerEvent> = new Set(["queued", "running", "needs-attention"]);
+
+function groupableRoutine<T extends ChatRow>(row: T): row is T & RoutineMarker {
+  return row.kind === "routine" && !LIVE_ROUTINE_EVENTS.has(row.event);
 }
 
-function completedRun<T extends ChatRow>(row: T): row is T & RoutineMarker {
-  return row.kind === "routine" && row.event === "succeeded";
+function routineRowId(
+  first: RoutineMarker,
+  run: readonly RoutineMarker[],
+  markerIds: ReadonlySet<string>,
+  usedIds: ReadonlySet<string>,
+): string {
+  for (const marker of run) {
+    const id = routineRowIds.get(marker.id);
+    if (id === undefined || usedIds.has(id)) continue;
+    if (!markerIds.has(id) || run.some((item) => item.id === id)) return id;
+  }
+  return first.id;
 }
 
-/** Reuse the group of the same runs, so a streamed reply does not draw the group row again. */
-function routineRunGroup(first: RoutineMarker, runs: RoutineMarker[]): RoutineRunGroup {
+function routineRunGroup(id: string, first: RoutineMarker, runs: RoutineMarker[]): RoutineRunGroup {
   const cached = routineRunGroups.get(first);
-  if (cached?.runs.length === runs.length && cached.runs.every((item, index) => item === runs[index])) return cached;
+  if (
+    cached?.id === id &&
+    cached.runs.length === runs.length &&
+    cached.runs.every((item, index) => item === runs[index])
+  )
+    return cached;
+  const newest = runs.at(-1) ?? first;
   const group: RoutineRunGroup = {
-    id: first.id,
+    id,
     kind: "routine-run-group",
-    routineName: runs.at(-1)?.routineName ?? first.routineName,
+    routineName: runs.every((item) => item.routineId === first.routineId) ? newest.routineName : null,
     runs,
   };
   routineRunGroups.set(first, group);
   return group;
 }
 
-/**
- * The row that shows a host message, for a chat that opens at a search result. A marker row has the
- * message ID after its prefix, and a group row holds several markers. -1 when no row shows it.
- */
 export function chatRowIndex(rows: readonly ChatRow[], messageId: string): number {
   const ids = new Set([messageId, `exchange:${messageId}`, `routine:${messageId}`, `context-reset:${messageId}`]);
   return rows.findIndex((row) => rowMarkers(row).some((marker) => ids.has(marker.id)));
 }
 
-/** The row that holds the row with `id`: the row itself, or the group it is in. -1 when none does. */
 export function chatRowHolding(rows: readonly ChatRow[], id: string): number {
   return rows.findIndex((row) => rowMarkers(row).some((marker) => marker.id === id));
 }
 
 const MARKER_ROW_PREFIX = /^(?:exchange|routine|context-reset):/u;
 
-/**
- * The first row that shows one of `messageIds`, with the row IDs that `chatRowIndex` reads. -1 when
- * no row shows one of them.
- */
 export function firstChatRowOf(rows: readonly ChatRow[], messageIds: ReadonlySet<string>): number {
   return rows.findIndex((row) =>
     rowMarkers(row).some((marker) => messageIds.has(marker.id.replace(MARKER_ROW_PREFIX, ""))),
@@ -604,7 +763,6 @@ function groupableExchange<T extends ChatMessage>(message: T): message is T & Ex
   return message.kind === "exchange" && !message.standalone;
 }
 
-/** Reuse the group of the same markers, so a streamed reply does not draw the group row again. */
 function exchangeGroup(first: ExchangeMarker, exchanges: ExchangeMarker[]): ExchangeGroup {
   const cached = exchangeGroups.get(first);
   if (
@@ -619,10 +777,6 @@ function exchangeGroup(first: ExchangeMarker, exchanges: ExchangeMarker[]): Exch
 
 const failedBubbles = new WeakMap<ChatMessage, ChatMessage>();
 
-/**
- * Adds the reason the host keeps on each failed delivery to its user bubble. The conversation has
- * only the status; the reason comes with the queue. A user bubble has the ID of its delivery.
- */
 export function withFailureReasons(messages: ChatMessage[], deliveries: readonly QueueDelivery[]): ChatMessage[] {
   const reasons = new Map<string, string>();
   for (const delivery of deliveries) {
@@ -648,25 +802,41 @@ function visualReply(message: Parameters<typeof chatVisualReply>[0]): { visual?:
   return { visual: visual.height === undefined ? {} : { height: visual.height } };
 }
 
-/**
- * The message that a read of the chat goes through: the newest one that the host counts as unread,
- * by the rule that the host and the desktop app use. A read through an earlier message left the
- * chat unread (#5089).
- */
 export function latestReadBoundaryMessage(messages: ConversationMessage[]) {
   return messages.findLast((message) => message.author !== "user" && itemTypeCountsAsUnread(message.itemType));
 }
 
 const projectedChannelMessages = new WeakMap<
   ChannelMessage,
-  { self: boolean; latest: boolean; message: ChatMessage | null }
+  {
+    self: boolean;
+    latest: boolean;
+    progress: boolean;
+    replaced: boolean;
+    run: RoutineRunStatus | null;
+    localize: (text: string) => string;
+    rows: readonly ChatMessage[];
+  }
 >();
 
 function projectChannelMessage(
   entry: ChannelMessage,
   self: boolean,
   latestRuns: ReadonlySet<string>,
+  progress: boolean,
+  replaced: boolean,
+  request: ReturnType<typeof channelRoutineRequest>,
+  localize: (text: string) => string,
 ): ChatMessage | null {
+  if (request)
+    return {
+      id: entry.id,
+      kind: "routine",
+      event: request.status,
+      label: ROUTINE_RUN_LABELS[request.status],
+      routineId: request.routineId,
+      routineName: request.routineName,
+    };
   const routine = routineMarker(entry.message);
   if (routine) {
     if (routine.runId && !latestRuns.has(entry.message.id)) return null;
@@ -677,7 +847,6 @@ function projectChannelMessage(
       label: routine.label,
       routineId: routine.routineId,
       routineName: routine.routineName,
-      storedAt: entry.message.createdAt,
     };
   }
   if (entry.message.questionPrompt) {
@@ -692,9 +861,13 @@ function projectChannelMessage(
           : entry.message.questionPrompt,
     };
   }
+  if (marketplaceSuggestionEvent(entry.message)) {
+    const appId = suggestedApp(entry.message);
+    return appId ? { id: entry.id, kind: "app-suggestion", appId } : null;
+  }
+  if (settingLinkMessage(entry.message)) return null;
   const routing = channelRoutingConversationEvent(entry.message);
   if (routing) return { id: entry.id, kind: "channel-routing", event: routing };
-  // Older hosts stored only the receipt text. Never reinterpret a typed event as legacy text.
   if (
     !entry.message.itemType &&
     entry.author.kind === "agent" &&
@@ -712,10 +885,10 @@ function projectChannelMessage(
         event: { action: assigned ? "assigned" : "continued", agentId: null, agentName: name },
       };
   }
-  // A plan card of channel work shows as in an agent chat.
-  const plan = entry.author.kind === "agent" ? projectPlan(entry.message) : null;
+  const plan = entry.author.kind === "agent" ? projectPlan(entry.message, replaced) : null;
   if (plan) return { ...plan, id: entry.id };
   if (entry.author.kind === "agent" && entry.message.itemType === "commentary" && !entry.superseded) {
+    if (progress) return { ...progressBubble(entry.id, entry.message), speaker: entry.author };
     return {
       id: entry.id,
       kind: "thinking",
@@ -730,25 +903,53 @@ function projectChannelMessage(
     ...(self ? { mine: true } : {}),
     speaker: entry.author,
     superseded: entry.superseded,
-    body: entry.message.text,
+    body: coordinatorText(entry.author, entry.message.text, localize),
     streaming: entry.message.status === "streaming",
     status: entry.message.status,
     replyToMessageId: entry.message.replyToMessageId,
     attachments: entry.message.attachments,
     ...visualReply(entry.message),
     imageGeneration: entry.message.imageGeneration,
+    videoGeneration: entry.message.videoGeneration,
     createdAt: entry.message.createdAt,
   };
 }
 
-/** Keep channel authors explicit: another human member is not the current user. */
-export function projectChannelMessages(messages: ChannelMessage[], memberId: string | null): ChatMessage[] {
+export function projectChannelMessages(
+  messages: ChannelMessage[],
+  tasks: readonly ChannelTask[],
+  memberId: string | null,
+  localize: (text: string) => string,
+  progressUpdates?: ProgressUpdates,
+): ChatMessage[] {
   const latestRuns = latestRoutineRunMessages(messages.map((entry) => entry.message));
+  const answered = progressUpdates ? answerTimes(messages.map((entry) => entry.message)) : undefined;
+  const shownNotes = turnShownNotes();
+  const replacedIds = replacedConversationPlans(
+    messages.map((entry) => ({
+      id: entry.id,
+      turnId: entry.message.turnId,
+      agent: entry.author.kind === "agent" && !entry.message.routine ? entry.author.id : null,
+      plan: entry.message.itemType === CONVERSATION_PLAN_ITEM_TYPE,
+    })),
+  );
+  const showsUpdate = (entry: ChannelMessage) =>
+    Boolean(progressUpdates && answered) &&
+    entry.author.kind === "agent" &&
+    !entry.superseded &&
+    entry.message.itemType === "commentary" &&
+    (!answered || beforeAnswer(entry.message, answered)) &&
+    shownProgressUpdate(
+      entry.message,
+      progressUpdates?.provider(entry.author.id),
+      shownNotes(entry.message.turnId ?? entry.message.id),
+    );
   return messages
     .filter(
       (entry) =>
         entry.message.questionPrompt ||
         entry.message.imageGeneration ||
+        entry.message.videoGeneration ||
         entry.message.text.trim() ||
         entry.message.attachments?.length,
     )
@@ -756,9 +957,40 @@ export function projectChannelMessages(messages: ChannelMessage[], memberId: str
       const self = entry.author.kind === "member" && entry.author.id === memberId;
       const cached = projectedChannelMessages.get(entry);
       const latest = latestRuns.has(entry.message.id);
-      if (cached && cached.self === self && cached.latest === latest) return cached.message ?? [];
-      const message = projectChannelMessage(entry, self, latestRuns);
-      projectedChannelMessages.set(entry, { self, latest, message });
-      return message ?? [];
+      const progress = showsUpdate(entry);
+      const replaced = replacedIds.has(entry.id);
+      const request = channelRoutineRequest(entry, tasks);
+      const run = request?.status ?? null;
+      if (
+        cached &&
+        cached.self === self &&
+        cached.latest === latest &&
+        cached.progress === progress &&
+        cached.replaced === replaced &&
+        cached.run === run &&
+        cached.localize === localize
+      )
+        return cached.rows;
+      const message = projectChannelMessage(entry, self, latestRuns, progress, replaced, request, localize);
+      const rows: readonly ChatMessage[] = !message
+        ? []
+        : progress
+          ? [
+              message,
+              {
+                id: `${entry.id}:step`,
+                kind: "thinking",
+                turnId: entry.message.turnId,
+                steps: [{ id: entry.id, text: entry.message.text, progress: true }],
+              },
+            ]
+          : [message];
+      projectedChannelMessages.set(entry, { self, latest, progress, replaced, run, localize, rows });
+      return rows;
     });
+}
+
+export function keptIdSet(previous: ReadonlySet<string> | null, ids: readonly string[]): ReadonlySet<string> {
+  if (previous && previous.size === ids.length && ids.every((id) => previous.has(id))) return previous;
+  return new Set(ids);
 }

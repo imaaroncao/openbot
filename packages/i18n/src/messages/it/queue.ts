@@ -7,6 +7,8 @@ export const messages = {
   "queue.attachment": "Allegato",
   "queue.hold.named": "In attesa - {name} sta lavorando in {channel}",
   "queue.hold.unnamed": "In attesa - questo agente sta lavorando in {channel}",
+  "queue.hold.providerRestart": "In attesa - {provider} si riavvia quando le attività in corso sono finite",
+  "queue.hold.signIn": "In attesa: {provider} richiede l’accesso",
   "queue.item.label": "Messaggio in coda {position}: {preview}",
   "queue.item.labelEditing": "Messaggio in coda {position}, in modifica: {preview}",
   "queue.item.editing": "In modifica",
@@ -21,6 +23,7 @@ export const messages = {
   "queue.item.steerFallback.providerUnsupported":
     "Questo provider non può indirizzare un turno in corso, quindi il messaggio resta in coda.",
   "queue.item.steerFallback.steerFailed": "L'indirizzamento non è riuscito, quindi il messaggio resta in coda.",
+  "queue.item.steerFallback.routineRun": "È in corso una routine, quindi il messaggio resta in coda.",
   "queue.item.runAsTask": "Esegui in un nuovo thread",
   "queue.item.runAsTaskLabel": "Esegui il messaggio in coda {position} in un nuovo thread",
   "queue.item.deleteLabel": "Elimina il messaggio in coda {position}",

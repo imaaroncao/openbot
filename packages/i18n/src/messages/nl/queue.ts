@@ -7,6 +7,8 @@ export const messages = {
   "queue.attachment": "Bijlage",
   "queue.hold.named": "Wachten - {name} is bezig in {channel}",
   "queue.hold.unnamed": "Wachten - deze agent is bezig in {channel}",
+  "queue.hold.providerRestart": "Wachten - {provider} herstart wanneer de lopende taken klaar zijn",
+  "queue.hold.signIn": "Wacht – {provider} moet worden aangemeld",
   "queue.item.label": "Bericht in wachtrij {position}: {preview}",
   "queue.item.labelEditing": "Bericht in wachtrij {position}, wordt bewerkt: {preview}",
   "queue.item.editing": "Bewerken",
@@ -21,6 +23,7 @@ export const messages = {
   "queue.item.steerFallback.providerUnsupported":
     "Deze aanbieder kan een lopende beurt niet bijsturen, dus het bericht wacht in de wachtrij.",
   "queue.item.steerFallback.steerFailed": "Bijsturen is niet gelukt, dus het bericht wacht in de wachtrij.",
+  "queue.item.steerFallback.routineRun": "Er draait nu een routine, dus het bericht wacht in de wachtrij.",
   "queue.item.runAsTask": "Uitvoeren in nieuwe thread",
   "queue.item.runAsTaskLabel": "Bericht in wachtrij {position} uitvoeren in een nieuwe thread",
   "queue.item.deleteLabel": "Bericht in wachtrij {position} verwijderen",

@@ -29,7 +29,7 @@ export function AgentPinTransitionOverlay({ progress, transition }: AgentPinTran
       width: transition.from.width,
       zIndex: 100,
     };
-  }, [transition]);
+  });
 
   if (!transition) return null;
 
@@ -39,6 +39,7 @@ export function AgentPinTransitionOverlay({ progress, transition }: AgentPinTran
         <ChannelAvatar
           channel={transition.avatar.channel}
           agents={transition.avatar.agents}
+          serverId={transition.avatar.serverId}
           disconnected={transition.avatar.disconnected}
           size={transition.from.width}
         />

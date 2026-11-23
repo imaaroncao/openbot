@@ -1,10 +1,8 @@
-import { type MachineMetric, type MachineMetrics, machineMetricRatio } from "@openbot/contracts/ipc";
+import type { MachineMetric, MachineMetrics } from "@openbot/contracts/ipc";
 import type { AppTextKey } from "@openbot/i18n";
 import { Cpu, HardDrive, MemoryStick } from "@openbot/ui";
 import { useText } from "@openbot/ui/text";
 import type { JSX } from "@solidjs/web";
-
-/** The name, icon, use and colour of one machine metric, as Storage and the Usage header show them. */
 
 export const MACHINE_METRIC_LABELS = {
   disk: "files.machine.disk",
@@ -18,25 +16,9 @@ export const MACHINE_METRIC_ICONS: Record<MachineMetric, (props: { class: string
   cpu: (props) => <Cpu class={props.class} aria-hidden="true" />,
 };
 
-export type MachineMetricTone = "normal" | "warning" | "danger";
-
-/** The whole percent in use, or null when the host could not read the metric. 0% is a reading too. */
-export function machineMetricPercent(metrics: MachineMetrics, metric: MachineMetric): number | null {
-  const ratio = machineMetricRatio(metrics, metric);
-  return ratio === null ? null : Math.floor(ratio * 100);
-}
-
-/** Warning from the alert level, and danger far above it: at 95%, or 10 points above a higher level. */
-export function machineMetricTone(percent: number | null, level: number | null): MachineMetricTone {
-  if (percent === null || level === null || percent < level) return "normal";
-  return percent >= Math.max(95, level + 10) ? "danger" : "warning";
-}
-
-/** "4 cores", "5.1 GB of 7.6 GB", or "31 GB of 76 GB · 45 GB free". */
 export function useMachineMetricDetail() {
   const { t, format } = useText();
-  return (metrics: MachineMetrics, metric: MachineMetric): string => {
-    // A container limit can be part of a core, such as 1.5.
+  return (metrics: MachineMetrics, metric: MachineMetric, hostedPlan = false): string => {
     if (metric === "cpu") {
       const cores = metrics.cpuMillicores / 1000;
       return t("files.machine.cores", { count: cores, cores: format.number(cores, { maximumFractionDigits: 2 }) });
@@ -44,11 +26,8 @@ export function useMachineMetricDetail() {
     if (metric === "disk") {
       const { diskUsedBytes: used, diskFreeBytes: free, diskTotalBytes: total } = metrics;
       if (used === null || free === null || total === null) return t("files.machine.unknown");
-      return t("files.machine.diskDetail", {
-        used: format.fileSize(used),
-        total: format.fileSize(total),
-        free: format.fileSize(free),
-      });
+      const size = hostedPlan ? format.fileSize : format.diskSize;
+      return t("files.machine.diskDetail", { used: size(used), total: size(total), free: size(free) });
     }
     const { memoryTotalBytes: total, memoryAvailableBytes: free } = metrics;
     if (total === null || free === null) return t("files.machine.unknown");

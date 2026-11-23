@@ -1,14 +1,8 @@
-// One `GET {baseUrl}/models` request to an OpenAI-compatible server, made in main because the
-// renderer's content security policy blocks a local address and a stored key must not go back to
-// the page.
-//
-// An error names the host only. The path and the query of a base URL can hold a token, and the key
-// and the header values are credentials, so no message and no log line contains them.
-
 import { INPUT_LIMITS } from "@openbot/contracts/input-limits";
 import type { CustomProviderHeader, CustomProviderInputKind, DetectedModel } from "@openbot/contracts/ipc";
 import {
   CUSTOM_PROVIDER_INPUT_KINDS,
+  CUSTOM_PROVIDER_REASONING_EFFORTS,
   isCustomProviderContextWindow,
   isCustomProviderMaxOutput,
   PROVIDER_DETECTION_LIMITS,
@@ -18,7 +12,6 @@ import { sourceText } from "@openbot/i18n/source";
 import { Context, Effect, Layer, Schema } from "effect";
 import { readLimitedBody } from "../backend/limited-body";
 
-/** A model list is a small JSON object. A larger body is not a model list. */
 const MODEL_LIST_BODY_LIMIT = 1024 * 1024;
 
 interface ModelServerTarget {
@@ -27,7 +20,6 @@ interface ModelServerTarget {
   headers: readonly CustomProviderHeader[];
 }
 
-/** The part of an address that an error may name. */
 function hostOf(baseUrl: string): string {
   try {
     return new URL(baseUrl).host;
@@ -69,10 +61,8 @@ export type ProbeError =
   | InvalidModelList
   | ModelListTooLarge;
 
-// The envelope is strict; individual entries remain tolerant for server compatibility.
 const ModelListEnvelope = Schema.Struct({ data: Schema.Array(Schema.Unknown) });
 
-/** Secret-bearing request details and causes never enter errors or tracing attributes. */
 export const probeModels = Effect.fn("ModelServerProbe.probe")(function* (
   target: ModelServerTarget,
   timeoutMs: number,
@@ -146,7 +136,6 @@ const readLimited = Effect.fn("ModelServerProbe.readLimited")(function* (respons
   return body.toString("utf8");
 });
 
-/** Skip unusable entries, deduplicate ids, and stop at the public limit. */
 function parseModelList(entries: readonly unknown[]): DetectedModel[] {
   const seen = new Set<string>();
   const models: DetectedModel[] = [];
@@ -161,19 +150,12 @@ function parseModelList(entries: readonly unknown[]): DetectedModel[] {
   return models;
 }
 
-/** The input kinds of a list, by their names there. OpenRouter calls a PDF input `file`. */
 const LISTED_INPUT_KINDS: ReadonlyMap<string, CustomProviderInputKind> = new Map([
   ["image", "image"],
   ["pdf", "pdf"],
   ["file", "pdf"],
 ]);
 
-/**
- * What a list entry says about the model, in the shapes that servers publish: models.dev
- * (`modalities.input`, `limit.context`, `limit.output`), OpenRouter (`architecture.input_modalities`,
- * `context_length`, `top_provider.max_completion_tokens`) and vLLM (`max_model_len`). A missing or
- * out-of-range value is left out.
- */
 function modelDetails(entry: DynamicRecord): Omit<DetectedModel, "id"> {
   const limit = isDynamicRecord(entry.limit) ? entry.limit : {};
   const topProvider = isDynamicRecord(entry.top_provider) ? entry.top_provider : {};
@@ -188,11 +170,15 @@ function modelDetails(entry: DynamicRecord): Omit<DetectedModel, "id"> {
         listed.some((name) => isString(name) && LISTED_INPUT_KINDS.get(name) === kind),
       )
     : undefined;
+  const reasoning = isDynamicRecord(entry.reasoning) ? entry.reasoning : {};
+  const listedEfforts = [reasoning.supported_efforts, entry.reasoning_efforts].find(Array.isArray);
+  const reasoningEfforts = Array.isArray(listedEfforts)
+    ? CUSTOM_PROVIDER_REASONING_EFFORTS.filter((effort) => listedEfforts.includes(effort))
+    : [];
   return {
     ...(inputs ? { inputs } : {}),
+    ...(reasoningEfforts.length > 0 ? { reasoningEfforts } : {}),
     ...(contextWindow !== undefined ? { contextWindow } : {}),
-    // The form takes a max output only with a context window. A cap as large as the window leaves no
-    // room for the prompt (OpenRouter often lists both as the same number), so the default stays.
     ...(contextWindow !== undefined && maxOutput !== undefined && maxOutput < contextWindow ? { maxOutput } : {}),
   };
 }
