@@ -76,7 +76,18 @@ fi
 
 echo "▸ Uploading to $TARGET:$REMOTE_DIR"
 "${SSH[@]}" "$SUDO mkdir -p '$REMOTE_DIR' && $SUDO chown \$(id -u):\$(id -g) '$REMOTE_DIR'"
-scp -q "$ARCHIVE" "$TARGET:$REMOTE_DIR/openbot-selfhost.tar.gz"
+# Some networks and proxies reset a long upload, so a dropped connection resumes at the byte it reached.
+REMOTE_ARCHIVE="$REMOTE_DIR/openbot-selfhost.tar.gz"
+SIZE="$(stat -f %z "$ARCHIVE" 2>/dev/null || stat -c %s "$ARCHIVE")"
+"${SSH[@]}" "rm -f '$REMOTE_ARCHIVE'"
+for attempt in $(seq 1 300); do
+  SENT="$("${SSH[@]}" "stat -c %s '$REMOTE_ARCHIVE' 2>/dev/null || echo 0")" || continue
+  [[ "$SENT" == "$SIZE" ]] && break
+  [[ "$SENT" == 0 ]] || echo "  resuming at $SENT of $SIZE bytes"
+  tail -c +"$((SENT + 1))" "$ARCHIVE" | "${SSH[@]}" "cat >> '$REMOTE_ARCHIVE'" || true
+done
+[[ "$("${SSH[@]}" "sha256sum '$REMOTE_ARCHIVE'" | cut -d' ' -f1)" == "$(shasum -a 256 "$ARCHIVE" | cut -d' ' -f1)" ]] ||
+  { echo "The upload did not arrive whole." >&2; exit 1; }
 "${SSH[@]}" "set -e
   cd '$REMOTE_DIR'
   rm -rf selfhost/server/auth-api/bundle
